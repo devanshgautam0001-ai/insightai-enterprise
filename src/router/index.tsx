@@ -33,10 +33,38 @@ export const AppRouter: React.FC = () => {
   const { currentView, isLoggedIn, userRole } = useUIStore();
 
   const isViewAllowed = (view: string) => {
-    const adminViews = ['workspace', 'settings', 'user-management', 'analytics-config'];
-    if (adminViews.includes(view)) {
-      return userRole === 'ADMIN';
+    if (userRole === 'OWNER' || userRole === 'SUPER_ADMIN') {
+      return true;
     }
+    if (userRole === 'ADMIN') {
+      return true;
+    }
+
+    // Only Billing, User Management, Role Management, Owner Settings, Firebase Configuration, System Configuration remain restricted.
+    // user-management represents User & Role management, so it is restricted.
+    const restrictedViews = ['user-management'];
+    if (restrictedViews.includes(view)) {
+      return false;
+    }
+
+    if (userRole === 'ANALYST') {
+      return true;
+    }
+
+    if (userRole === 'USER') {
+      const allowedViews = [
+        'landing',
+        'login',
+        'register',
+        'forgot-password',
+        'dashboard',
+        'predictions',
+        'reports',
+        'dashboardbuilder'
+      ];
+      return allowedViews.includes(view);
+    }
+
     return true;
   };
 

@@ -1,3 +1,5 @@
+import firebaseConfig from "../../firebase-applet-config.json";
+
 export interface FirebaseDiagnosticReport {
   currentDomain: string;
   projectId: string;
@@ -12,53 +14,66 @@ export interface FirebaseDiagnosticReport {
 }
 
 export function runFirebaseDiagnostics(error: any): FirebaseDiagnosticReport {
-  const currentDomain = typeof window !== 'undefined' ? window.location.hostname : 'unknown';
-  const apiKey = (import.meta as any).env?.VITE_FIREBASE_API_KEY || '';
-  const projectId = (import.meta as any).env?.VITE_FIREBASE_PROJECT_ID || '';
-  const authDomain = (import.meta as any).env?.VITE_FIREBASE_AUTH_DOMAIN || '';
-  const appId = (import.meta as any).env?.VITE_FIREBASE_APP_ID || '';
-  const storageBucket = (import.meta as any).env?.VITE_FIREBASE_STORAGE_BUCKET || '';
+  const currentDomain =
+    typeof window !== "undefined" ? window.location.hostname : "unknown";
 
-  const isDomainMatch = currentDomain === 'localhost' || 
-                        currentDomain === '127.0.0.1' || 
-                        authDomain.includes(currentDomain) ||
-                        currentDomain.endsWith('.run.app');
+  // Load config directly from firebase-applet-config.json
+  const apiKey = firebaseConfig.apiKey;
+  const projectId = firebaseConfig.projectId;
+  const authDomain = firebaseConfig.authDomain;
+  const appId = firebaseConfig.appId;
+  const storageBucket = firebaseConfig.storageBucket;
 
-  const isValidApiKey = apiKey.startsWith('AIzaSy') && apiKey.length > 20;
+  const isDomainMatch =
+    currentDomain === "localhost" ||
+    currentDomain === "127.0.0.1" ||
+    authDomain.includes(currentDomain) ||
+    currentDomain.endsWith(".run.app");
 
-  const maskedKey = apiKey 
-    ? `${apiKey.slice(0, 6)}...${apiKey.slice(-4)}` 
-    : 'MISSING_OR_UNDEFINED';
+  const isValidApiKey =
+    typeof apiKey === "string" &&
+    apiKey.startsWith("AIzaSy") &&
+    apiKey.length > 20;
+
+  const maskedKey = isValidApiKey
+    ? `${apiKey.substring(0, 6)}...${apiKey.substring(apiKey.length - 4)}`
+    : "INVALID";
 
   const identityToolkitUrl = `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${maskedKey}`;
 
-  let errorActionStep = "An unexpected error occurred during authentication.";
+  let errorActionStep = "Authentication failed. Check the exact Firebase error.";
 
-  if (error && (error.code === 'auth/operation-not-allowed' || String(error).includes('operation-not-allowed'))) {
-    errorActionStep = `The sign-in provider (Email/Password or Google) is currently disabled in your Firebase Project Console. 
-    
-How to resolve:
-1. Open the Firebase Console for your project "${projectId || 'end--to-end-data-pipeline'}".
-2. Navigate to "Build" -> "Authentication" -> "Sign-in method" tab.
-3. Under "Sign-in providers", click "Add new provider" (or edit the existing one) and select "Email/Password". Enable it and click "Save".
-4. If attempting Google Sign-In, also enable the "Google" provider.
-5. Under "Authorized domains", verify that your application's domain "${currentDomain}" is listed. (Localhost and cloud run domains are usually auto-added, but you can manually add "${currentDomain}" if needed).`;
-  } else if (error && (error.code === 'auth/invalid-api-key' || String(error).includes('invalid-api-key'))) {
-    errorActionStep = `The API Key provided in your configuration is invalid or unauthorized. Please verify your VITE_FIREBASE_API_KEY environment variable.`;
-  } else if (error && (error.code === 'auth/network-request-failed' || String(error).includes('network-request-failed'))) {
-    errorActionStep = `Network request to Identity Toolkit failed. This can happen due to standard local network firewalls, ad blockers blocking 'identitytoolkit.googleapis.com', or DNS resolution issues.`;
+  if (error?.code === "auth/operation-not-allowed") {
+    errorActionStep =
+      "Firebase returned OPERATION_NOT_ALLOWED. Verify that the application is using the correct Firebase Web App configuration (API Key, App ID and Project ID). Do NOT rely on environment variables if firebase-applet-config.json is the source of truth.";
+  } else if (error?.code === "auth/invalid-api-key") {
+    errorActionStep =
+      "The Firebase Web API Key is invalid. Verify the apiKey inside firebase-applet-config.json.";
+  } else if (error?.code === "auth/network-request-failed") {
+    errorActionStep =
+      "Network request failed. Check internet connection or firewall blocking identitytoolkit.googleapis.com.";
   }
+
+  console.group("🔥 FIREBASE DIAGNOSTICS");
+  console.log("Project ID:", projectId);
+  console.log("Auth Domain:", authDomain);
+  console.log("App ID:", appId);
+  console.log("Storage Bucket:", storageBucket);
+  console.log("API Key Present:", !!apiKey);
+  console.log("API Key Valid:", isValidApiKey);
+  console.log("Current Host:", currentDomain);
+  console.groupEnd();
 
   return {
     currentDomain,
-    projectId: projectId || 'end--to-end-data-pipeline',
-    authDomain: authDomain || 'end--to-end-data-pipeline.firebaseapp.com',
-    appId: appId || '1:167784001474:web:e48d194142ea5b3e91705b',
+    projectId,
+    authDomain,
+    appId,
     apiKeyMasked: maskedKey,
-    storageBucket: storageBucket || 'end--to-end-data-pipeline.firebasestorage.app',
+    storageBucket,
     identityToolkitUrl,
     isDomainMatch,
     isValidApiKey,
-    errorActionStep
+    errorActionStep,
   };
 }

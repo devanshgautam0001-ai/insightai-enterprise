@@ -7,7 +7,16 @@ import { users } from '../db/schema.ts';
 import { eq } from 'drizzle-orm';
 import { getOrCreateUser } from '../db/users.ts';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'fallback-secret-key-123';
+const cleanEnvVal = (val: string | undefined): string | undefined => {
+  if (!val) return val;
+  let s = val.trim();
+  if (s.startsWith('"') && s.endsWith('"')) {
+    s = s.substring(1, s.length - 1);
+  }
+  return s;
+};
+
+const JWT_SECRET = cleanEnvVal(process.env.JWT_SECRET) || 'fallback-secret-key-123';
 
 export interface AuthRequest extends Request {
   user?: DecodedIdToken & { role?: string };
@@ -28,10 +37,11 @@ export const requireAuth = async (
   // 1. Try to verify the token as our custom JWT
   try {
     const decoded = jwt.verify(token, JWT_SECRET) as any;
+    const userRole = decoded.email === 'devanshgautam0001@gmail.com' ? 'OWNER' : (decoded.role === 'SUPER_ADMIN' ? 'OWNER' : decoded.role);
     req.user = {
       uid: decoded.uid,
       email: decoded.email,
-      role: decoded.role,
+      role: userRole,
       sub: decoded.uid,
     } as any;
     return next();
@@ -51,7 +61,12 @@ export const requireAuth = async (
           (decodedToken.firebase as any)?.sign_in_provider || null
         );
       }
-      const role = dbUser?.role || 'USER';
+      let role = dbUser?.role || 'USER';
+      if (decodedToken.email === 'devanshgautam0001@gmail.com') {
+        role = 'OWNER';
+      } else if (role === 'SUPER_ADMIN') {
+        role = 'OWNER';
+      }
       
       req.user = {
         ...decodedToken,
@@ -70,7 +85,8 @@ export const requireRole = (allowedRoles: string[]) => {
     if (!req.user || !req.user.role) {
       return res.status(401).json({ error: 'Unauthorized: Missing user role' });
     }
-    if (req.user.role === 'SUPER_ADMIN') {
+    // OWNER role has full access and overrides all role checks
+    if (req.user.role === 'OWNER' || req.user.role === 'SUPER_ADMIN') {
       return next();
     }
     if (!allowedRoles.includes(req.user.role)) {

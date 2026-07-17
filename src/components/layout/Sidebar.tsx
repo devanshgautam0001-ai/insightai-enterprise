@@ -179,10 +179,18 @@ export const Sidebar: React.FC = () => {
       return 'current';
     }
 
-    // Step 16: Settings
-    if (id === 'settings' || id === 'workspace' || id === 'user-management' || id === 'analytics-config') {
-      if (userRole !== 'ADMIN') return 'locked';
-      if (id === 'workspace' && activeWorkspace) return 'completed';
+    // Step 16: Settings & Administrative Pages
+    if (id === 'settings' || id === 'analytics-config') {
+      return 'current';
+    }
+
+    if (id === 'user-management') {
+      if (userRole !== 'ADMIN' && userRole !== 'SUPER_ADMIN' && userRole !== 'OWNER') return 'locked';
+      return 'current';
+    }
+
+    if (id === 'workspace') {
+      if (activeWorkspace) return 'completed';
       return 'current';
     }
 
@@ -294,7 +302,7 @@ export const Sidebar: React.FC = () => {
         <div className="p-4 pb-2 border-b border-white/5">
           <button
             onClick={() => {
-              if (!activeWorkspace || !activeProject) {
+              if (userRole !== 'USER' && (!activeWorkspace || !activeProject)) {
                 addNotification({
                   title: 'Access Restricted',
                   description: 'Select Workspace (Step 2) and Create Project (Step 3) before accessing the Executive Cockpit.',
@@ -320,7 +328,26 @@ export const Sidebar: React.FC = () => {
           {!isSidebarCollapsed && (
             <p className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest px-2 mb-2">Pipeline Progress</p>
           )}
-          {pipelineStages.map((stage) => {
+          {pipelineStages.filter((stage) => {
+            if (userRole === 'OWNER' || userRole === 'SUPER_ADMIN') {
+              return true;
+            }
+            if (userRole === 'ADMIN') {
+              return true;
+            }
+            if (userRole === 'MANAGER') {
+              return stage.id !== 'user-management';
+            }
+            if (userRole === 'ANALYST') {
+              // Show complete sidebar pipeline steps for ANALYST
+              return true;
+            }
+            if (userRole === 'USER') {
+              // Show complete sidebar pipeline steps for USER
+              return true;
+            }
+            return true;
+          }).map((stage) => {
             const Icon = stage.icon;
             const status = getStageStatus(stage.id);
             const isTargetActive = currentView === stage.targetView && 
@@ -389,6 +416,7 @@ export const Sidebar: React.FC = () => {
               console.error("Firebase signout error:", e);
             }
             localStorage.removeItem('insightai_jwt');
+            localStorage.removeItem('insightai_mock_email');
             setLoggedIn(false);
             useUIStore.setState({ activeWorkspace: null, activeProject: null, activeDataset: null, trainedModel: null });
             setView('landing');

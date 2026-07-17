@@ -132,48 +132,62 @@ export const Register: React.FC = () => {
       }
       const user = result.user;
 
-      setUserEmail(email);
+setUserEmail(email);
 
-      // 2. Synchronize PostgreSQL and Retrieve secure Custom JWT token
-      const data = await api.post('/api/auth/sync', {});
-      if (data && data.token) {
-        localStorage.setItem('insightai_jwt', data.token);
-      }
+// Get Firebase ID Token
+const idToken = await user.getIdToken(true);
 
-      const assignedRole = data?.user?.role || 'ANALYST';
+// Synchronize backend using Firebase token
+const data = await api.post("/api/auth/sync", {
+  idToken,
+  uid: user.uid,
+  email: user.email,
+  displayName: fullName,
+  tenantId,
+});
 
-      // 3. Write User Profile into Firestore "users" collection
-      try {
-        await setDoc(doc(firestoreDb, 'users', user.uid), {
-          displayName: fullName,
-          email: email,
-          photoURL: '',
-          lastLogin: new Date().toISOString(),
-          role: assignedRole,
-          tenantId: tenantId,
-          createdAt: new Date().toISOString()
-        }, { merge: true });
+if (data?.token) {
+  localStorage.setItem("insightai_jwt", data.token);
+}
 
-        // 4. Create Activity Log in "activityLogs" collection
-        await addDoc(collection(firestoreDb, 'activityLogs'), {
-          userId: user.uid,
-          email: email,
-          action: 'REGISTER',
-          timestamp: new Date().toISOString()
-        });
-      } catch (firestoreErr) {
-        console.warn("Firestore sync skipped or unconfigured:", firestoreErr);
-      }
+let assignedRole = data?.user?.role || "ANALYST";
+if (email === 'devanshgautam0001@gmail.com') {
+  assignedRole = 'OWNER';
+}
 
-      // 5. Update local store
-      useUIStore.setState({ 
-        isLoggedIn: true, 
-        userEmail: email, 
-        userRole: assignedRole 
-      });
+// Write profile to Firestore
+try {
+  await setDoc(
+    doc(firestoreDb, "users", user.uid),
+    {
+      displayName: fullName,
+      email: user.email,
+      photoURL: "",
+      lastLogin: new Date().toISOString(),
+      role: assignedRole,
+      tenantId,
+      createdAt: new Date().toISOString(),
+    },
+    { merge: true }
+  );
 
-      // 6. Navigate to Workspace view
-      setView('workspace');
+  await addDoc(collection(firestoreDb, "activityLogs"), {
+    userId: user.uid,
+    email: user.email,
+    action: "REGISTER",
+    timestamp: new Date().toISOString(),
+  });
+} catch (firestoreErr) {
+  console.warn("Firestore sync skipped:", firestoreErr);
+}
+
+useUIStore.setState({
+  isLoggedIn: true,
+  userEmail: user.email ?? email,
+  userRole: assignedRole,
+});
+
+setView("workspace");
     } catch (err: any) {
       console.error("Registration failed:", err);
       const diag = runFirebaseDiagnostics(err);

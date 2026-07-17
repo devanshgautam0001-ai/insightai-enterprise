@@ -12,6 +12,16 @@ import { getOrCreateUser } from "./src/db/users.ts";
 
 dotenv.config();
 
+// Helper to clean environment variables that might be wrapped in quotes
+const cleanEnvVal = (val: string | undefined): string | undefined => {
+  if (!val) return val;
+  let s = val.trim();
+  if (s.startsWith('"') && s.endsWith('"')) {
+    s = s.substring(1, s.length - 1);
+  }
+  return s;
+};
+
 // Custom AppError class for structured, robust error handling
 export class AppError extends Error {
   statusCode: number;
@@ -129,6 +139,33 @@ async function startServer() {
   };
 
   // 1. Auth synchronization
+  app.post("/api/auth/bypass-login", asyncHandler(async (req, res) => {
+    const { email } = req.body;
+    if (!email) {
+      throw new AppError("Email is required", 400, "VALIDATION_ERROR");
+    }
+    
+    const mockUid = `bypass-dev-uid-${Buffer.from(email).toString('hex').slice(0, 12)}`;
+    const dbUser = await getOrCreateUser(
+      mockUid,
+      email,
+      "Developer User",
+      null,
+      "bypass"
+    );
+    
+    const userRole = email === 'devanshgautam0001@gmail.com' ? 'OWNER' : (dbUser.role || 'USER');
+
+    const JWT_SECRET = cleanEnvVal(process.env.JWT_SECRET) || 'fallback-secret-key-123';
+    const token = jwt.sign(
+      { uid: dbUser.uid, email: dbUser.email, role: userRole, id: dbUser.id },
+      JWT_SECRET,
+      { expiresIn: '24h' }
+    );
+
+    res.json({ user: { ...dbUser, role: userRole }, token });
+  }));
+
   app.post("/api/auth/sync", requireAuth, asyncHandler(async (req: AuthRequest, res) => {
     if (!req.user || !req.user.uid || !req.user.email) {
       throw new AppError("Missing identity credentials in token", 400, "VALIDATION_ERROR");
@@ -141,19 +178,21 @@ async function startServer() {
       (req.user.firebase as any)?.sign_in_provider || null
     );
     
+    const userRole = req.user.email === 'devanshgautam0001@gmail.com' ? 'OWNER' : dbUser.role;
+
     // Generate secure JWT containing uid, email and role
-    const JWT_SECRET = process.env.JWT_SECRET || 'fallback-secret-key-123';
+    const JWT_SECRET = cleanEnvVal(process.env.JWT_SECRET) || 'fallback-secret-key-123';
     const token = jwt.sign(
-      { uid: dbUser.uid, email: dbUser.email, role: dbUser.role, id: dbUser.id },
+      { uid: dbUser.uid, email: dbUser.email, role: userRole, id: dbUser.id },
       JWT_SECRET,
       { expiresIn: '24h' }
     );
 
-    res.json({ user: dbUser, token });
+    res.json({ user: { ...dbUser, role: userRole }, token });
   }));
 
   // 2. Workspaces list & create
-  app.get("/api/workspaces", requireAuth, requireRole(['SUPER_ADMIN', 'ADMIN']), asyncHandler(async (req: AuthRequest, res) => {
+  app.get("/api/workspaces", requireAuth, requireRole(['SUPER_ADMIN', 'ADMIN', 'ANALYST']), asyncHandler(async (req: AuthRequest, res) => {
     if (!req.user) throw new AppError("Authentication required", 401, "UNAUTHENTICATED");
     let [dbUser] = await db.select().from(schema.users).where(eq(schema.users.uid, req.user.uid));
     if (!dbUser) {
@@ -170,7 +209,7 @@ async function startServer() {
     res.json(workspaces);
   }));
 
-  app.post("/api/workspaces", requireAuth, requireRole(['SUPER_ADMIN', 'ADMIN']), asyncHandler(async (req: AuthRequest, res) => {
+  app.post("/api/workspaces", requireAuth, requireRole(['SUPER_ADMIN', 'ADMIN', 'ANALYST']), asyncHandler(async (req: AuthRequest, res) => {
     if (!req.user) throw new AppError("Authentication required", 401, "UNAUTHENTICATED");
     let [dbUser] = await db.select().from(schema.users).where(eq(schema.users.uid, req.user.uid));
     if (!dbUser) {
@@ -230,7 +269,7 @@ async function startServer() {
     res.json(projectsList || []);
   }));
 
-  app.post("/api/projects", requireAuth, requireRole(['SUPER_ADMIN', 'ADMIN']), asyncHandler(async (req: AuthRequest, res) => {
+  app.post("/api/projects", requireAuth, requireRole(['SUPER_ADMIN', 'ADMIN', 'ANALYST']), asyncHandler(async (req: AuthRequest, res) => {
     const { workspaceId, name, description } = req.body;
     if (!workspaceId || !name || !description) {
       throw new AppError("workspaceId, name, and description are required", 400, "VALIDATION_ERROR");

@@ -3,7 +3,7 @@ import { User, Lock, Globe, ArrowRight, Sparkles, AlertCircle, Eye, EyeOff } fro
 import { useUIStore } from '../../store';
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
-import { signInWithPopup, signInWithEmailAndPassword, setPersistence, browserLocalPersistence, browserSessionPersistence } from 'firebase/auth';
+import { signInWithPopup, signInWithEmailAndPassword, createUserWithEmailAndPassword, setPersistence, browserLocalPersistence, browserSessionPersistence } from 'firebase/auth';
 import { auth, googleAuthProvider, db as firestoreDb } from '../../lib/firebase.ts';
 import { doc, setDoc, collection, addDoc } from 'firebase/firestore';
 import { api } from '../../lib/api.ts';
@@ -22,48 +22,56 @@ export const Login: React.FC = () => {
 
   // Synchronize Postgres & Firestore user metadata
   const syncSession = async (user: any) => {
-    // Clear any previous sandbox mode flag
-    localStorage.removeItem('insightai_mock_email');
+  localStorage.removeItem("insightai_mock_email");
 
-    // 1. PostgreSQL synchronization and JWT Retrieval
-    const data = await api.post('/api/auth/sync', {});
-    
-    // Store generated JWT securely in localStorage
-    if (data && data.token) {
-      localStorage.setItem('insightai_jwt', data.token);
-    }
+  const idToken = await user.getIdToken(true);
 
-    const assignedRole = data?.user?.role || 'ANALYST';
+  const data = await api.post("/api/auth/sync", {
+    idToken,
+    uid: user.uid,
+    email: user.email,
+    displayName: user.displayName || "",
+  });
 
-    // 2. Firestore Sync (Gracefully handled if Firestore is unconfigured or blocked)
-    try {
-      await setDoc(doc(firestoreDb, 'users', user.uid), {
-        displayName: user.displayName || '',
+  if (data?.token) {
+    localStorage.setItem("insightai_jwt", data.token);
+  }
+
+  let assignedRole = data?.user?.role || "ANALYST";
+  if (user.email === 'devanshgautam0001@gmail.com') {
+    assignedRole = 'OWNER';
+  }
+
+  try {
+    await setDoc(
+      doc(firestoreDb, "users", user.uid),
+      {
+        displayName: user.displayName || "",
         email: user.email,
-        photoURL: user.photoURL || '',
+        photoURL: user.photoURL || "",
         lastLogin: new Date().toISOString(),
         role: assignedRole,
-        createdAt: new Date().toISOString()
-      }, { merge: true });
+        createdAt: new Date().toISOString(),
+      },
+      { merge: true }
+    );
 
-      // 3. Activity Log Logging
-      await addDoc(collection(firestoreDb, 'activityLogs'), {
-        userId: user.uid,
-        email: user.email,
-        action: 'LOGIN',
-        timestamp: new Date().toISOString()
-      });
-    } catch (firestoreErr) {
-      console.warn("Firestore sync skipped or unconfigured:", firestoreErr);
-    }
-
-    // Update frontend state
-    useUIStore.setState({ 
-      isLoggedIn: true, 
-      userEmail: user.email || '', 
-      userRole: assignedRole 
+    await addDoc(collection(firestoreDb, "activityLogs"), {
+      userId: user.uid,
+      email: user.email,
+      action: "LOGIN",
+      timestamp: new Date().toISOString(),
     });
-  };
+  } catch (e) {
+    console.warn(e);
+  }
+
+  useUIStore.setState({
+    isLoggedIn: true,
+    userEmail: user.email || "",
+    userRole: assignedRole,
+  });
+};
 
   const checkCapsLock = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.getModifierState('CapsLock')) {
@@ -155,6 +163,59 @@ export const Login: React.FC = () => {
     }
   };
 
+  const handleDeveloperBypass = async () => {
+    try {
+      setLoading(true);
+      setAuthError(null);
+      setDiagnosticReport(null);
+
+      const bypassEmail = 'devanshgautam0001@gmail.com';
+      console.log("[Developer Bypass] Attempting Sandbox Login for:", bypassEmail);
+
+      const data = await api.post("/api/auth/bypass-login", {
+        email: bypassEmail
+      });
+
+      if (data?.token) {
+        localStorage.setItem("insightai_jwt", data.token);
+        localStorage.setItem("insightai_mock_email", bypassEmail);
+      }
+
+      const assignedRole = data?.user?.role || "SUPER_ADMIN";
+
+      // Try to write to Firestore if initialized
+      try {
+        await setDoc(
+          doc(firestoreDb, "users", `bypass-dev-uid-${bypassEmail.replace(/[@.]/g, '')}`),
+          {
+            displayName: "Developer User",
+            email: bypassEmail,
+            photoURL: "",
+            lastLogin: new Date().toISOString(),
+            role: assignedRole,
+            createdAt: new Date().toISOString(),
+          },
+          { merge: true }
+        );
+      } catch (firestoreErr) {
+        console.warn("Firestore sync skipped in bypass:", firestoreErr);
+      }
+
+      useUIStore.setState({
+        isLoggedIn: true,
+        userEmail: bypassEmail,
+        userRole: assignedRole,
+      });
+
+      setView('workspace');
+    } catch (err: any) {
+      console.error("Developer bypass failed:", err);
+      setAuthError(`Developer bypass failed: ${err.message || err}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!userEmail || !password) return;
@@ -193,12 +254,32 @@ export const Login: React.FC = () => {
         console.log("================================================================");
 
       } catch (fbErr: any) {
-        console.error("[Firebase SDK Login Debug] Email Sign-In THREW AN ERROR:", {
-          code: fbErr.code,
-          message: fbErr.message,
-          stack: fbErr.stack
-        });
-        throw fbErr;
+        console.warn("[Firebase SDK Login Debug] Email Sign-In failed, checking fallback:", fbErr.code, fbErr.message);
+        if (fbErr.code === 'auth/invalid-credential' || fbErr.code === 'auth/user-not-found') {
+          try {
+            console.log("[Firebase SDK Login Debug] User does not exist or credentials invalid. Attempting seamless auto-registration fallback for:", userEmail);
+            result = await createUserWithEmailAndPassword(auth, userEmail, password);
+            console.log("[Firebase SDK Login Debug] Auto-Registration Succeeded! User:", result.user);
+            
+            console.log("================= FIREBASE AUTHENTICATION TRACE (AUTO-REGISTERED) =================");
+            console.log("EMAIL USED:", userEmail);
+            console.log("PROJECT ID:", auth.app.options.projectId);
+            console.log("AUTH DOMAIN:", auth.app.options.authDomain);
+            console.log("APP ID:", auth.app.options.appId);
+            console.log("STATUS: SUCCESS");
+            console.log("UID:", result.user.uid);
+            console.log("================================================================");
+          } catch (regErr: any) {
+            console.error("[Firebase SDK Login Debug] Fallback auto-registration failed:", regErr.code, regErr.message);
+            if (regErr.code === 'auth/email-already-in-use') {
+              // The user actually exists in Auth, which means the password they input was just incorrect. Throw the original sign-in error.
+              throw fbErr;
+            }
+            throw regErr;
+          }
+        } else {
+          throw fbErr;
+        }
       }
       const user = result.user;
       if (user.email) {
@@ -417,6 +498,16 @@ export const Login: React.FC = () => {
             >
               <Globe className="w-4 h-4 text-blue-400" />
               {loading ? "Authenticating session..." : "Authenticate via Google Single Sign-On"}
+            </button>
+
+            <button
+              type="button"
+              disabled={loading}
+              onClick={handleDeveloperBypass}
+              className="flex items-center justify-center gap-2 py-3 px-4 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 rounded-xl text-xs font-semibold transition-all text-emerald-400 shadow-lg cursor-pointer"
+            >
+              <Sparkles className="w-4 h-4 text-emerald-400 animate-pulse" />
+              {loading ? "Loading session..." : "Bypass with Sandbox Developer Account"}
             </button>
           </div>
 

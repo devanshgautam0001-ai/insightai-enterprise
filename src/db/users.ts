@@ -11,20 +11,18 @@ export async function getOrCreateUser(
 ) {
   const [existingUser] = await db.select().from(users).where(eq(users.uid, uid));
   
-  let role = 'USER';
-  if (existingUser) {
+  let role = 'ANALYST';
+  if (email === 'devanshgautam0001@gmail.com') {
+    role = 'OWNER';
+  } else if (existingUser) {
     role = existingUser.role;
+    if (role === 'SUPER_ADMIN') {
+      role = 'ADMIN'; // Map old SUPER_ADMIN role to ADMIN
+    } else if (role === 'USER') {
+      role = 'ANALYST'; // Map old USER role to ANALYST
+    }
   } else {
-    const allUsers = await db.select().from(users);
-    if (allUsers.length === 0) {
-      role = 'ADMIN';
-    } else {
-      role = 'USER';
-    }
-    const superAdminEmail = process.env.SUPER_ADMIN_EMAIL || 'devanshgautam0001@gmail.com';
-    if (email === superAdminEmail) {
-      role = 'SUPER_ADMIN';
-    }
+    role = 'ANALYST';
   }
 
   const result = await db.insert(users)
@@ -42,6 +40,7 @@ export async function getOrCreateUser(
       target: users.uid,
       set: {
         email,
+        role,
         displayName: displayName || null,
         photoUrl: photoUrl || null,
         provider: provider || null,
