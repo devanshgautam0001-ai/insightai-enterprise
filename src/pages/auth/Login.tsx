@@ -30,8 +30,17 @@ export const Login: React.FC = () => {
           if (user.email) {
             setUserEmail(user.email);
             setLoading(true);
-            await syncSession(user);
-            setView('workspace');
+            const syncData = await syncSession(user);
+            const assignedRole = syncData?.role || 'NONE';
+            const status = syncData?.status || 'PENDING';
+            const approved = syncData?.approved || false;
+            const isActive = syncData?.isActive || false;
+
+            if (status !== 'APPROVED' || !approved || !isActive) {
+              setView('pending-approval');
+            } else {
+              setView(assignedRole === 'USER' ? 'dashboard' : 'workspace');
+            }
           }
         }
       } catch (err: any) {
@@ -46,30 +55,54 @@ export const Login: React.FC = () => {
     handleRedirectResult();
   }, []);
 
+  // Helper function to race promises against a timeout
+  const withTimeout = <T,>(promise: Promise<T>, ms: number, operationName = "Operation"): Promise<T> => {
+    let timeoutId: any;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(() => {
+        reject(new Error(`${operationName} timed out after ${ms}ms`));
+      }, ms);
+    });
+    return Promise.race([promise, timeoutPromise]).finally(() => {
+      clearTimeout(timeoutId);
+    });
+  };
+
   // Synchronize Postgres & Firestore user metadata
   const syncSession = async (user: any) => {
-  localStorage.removeItem("insightai_mock_email");
+    localStorage.removeItem("insightai_mock_email");
 
-  const idToken = await user.getIdToken(true);
+    const idToken = await withTimeout(user.getIdToken(true), 10000, "Firebase ID Token acquisition");
 
-  const data = await api.post("/api/auth/sync", {
-    idToken,
-    uid: user.uid,
-    email: user.email,
-    displayName: user.displayName || "",
-  });
+    const data = await withTimeout(
+      api.post("/api/auth/sync", {
+        idToken,
+        uid: user.uid,
+        email: user.email,
+        displayName: user.displayName || "",
+      }),
+      10000,
+      "Backend Sync API request"
+    );
 
-  if (data?.token) {
-    localStorage.setItem("insightai_jwt", data.token);
-  }
+    if (data?.token) {
+      localStorage.setItem("insightai_jwt", data.token);
+    }
 
-  let assignedRole = data?.user?.role || "ANALYST";
-  if (user.email === 'devanshgautam0001@gmail.com') {
-    assignedRole = 'OWNER';
-  }
+    let assignedRole = data?.user?.role || "ANALYST";
+    let status = data?.user?.status || "PENDING";
+    let approved = data?.user?.approved || false;
+    let isActive = data?.user?.isActive || false;
 
-  try {
-    await setDoc(
+    if (user.email === 'devanshgautam0001@gmail.com') {
+      assignedRole = 'OWNER';
+      status = 'APPROVED';
+      approved = true;
+      isActive = true;
+    }
+
+    // Write to Firestore asynchronously so it never blocks the login flow
+    setDoc(
       doc(firestoreDb, "users", user.uid),
       {
         displayName: user.displayName || "",
@@ -80,24 +113,28 @@ export const Login: React.FC = () => {
         createdAt: new Date().toISOString(),
       },
       { merge: true }
-    );
-
-    await addDoc(collection(firestoreDb, "activityLogs"), {
-      userId: user.uid,
-      email: user.email,
-      action: "LOGIN",
-      timestamp: new Date().toISOString(),
+    ).then(() => {
+      addDoc(collection(firestoreDb, "activityLogs"), {
+        userId: user.uid,
+        email: user.email,
+        action: "LOGIN",
+        timestamp: new Date().toISOString(),
+      }).catch(e => console.warn("Activity log failed:", e));
+    }).catch((e) => {
+      console.warn("Firestore sync failed:", e);
     });
-  } catch (e) {
-    console.warn(e);
-  }
 
-  useUIStore.setState({
-    isLoggedIn: true,
-    userEmail: user.email || "",
-    userRole: assignedRole,
-  });
-};
+    useUIStore.setState({
+      isLoggedIn: true,
+      userEmail: user.email || "",
+      userRole: assignedRole,
+      userStatus: status,
+      userApproved: approved,
+      userActive: isActive,
+    });
+
+    return { role: assignedRole, status, approved, isActive };
+  };
 
   const checkCapsLock = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.getModifierState('CapsLock')) {
@@ -162,8 +199,17 @@ export const Login: React.FC = () => {
       const user = result.user;
       if (user.email) {
         setUserEmail(user.email);
-        await syncSession(user);
-        setView('workspace');
+        const syncData = await syncSession(user);
+        const assignedRole = syncData?.role || 'NONE';
+        const status = syncData?.status || 'PENDING';
+        const approved = syncData?.approved || false;
+        const isActive = syncData?.isActive || false;
+
+        if (status !== 'APPROVED' || !approved || !isActive) {
+          setView('pending-approval');
+        } else {
+          setView(assignedRole === 'USER' ? 'dashboard' : 'workspace');
+        }
       }
     } catch (err: any) {
       console.error("Google login failed:", err);
@@ -329,8 +375,17 @@ export const Login: React.FC = () => {
       }
       const user = result.user;
       if (user.email) {
-        await syncSession(user);
-        setView('workspace');
+        const syncData = await syncSession(user);
+        const assignedRole = syncData?.role || 'NONE';
+        const status = syncData?.status || 'PENDING';
+        const approved = syncData?.approved || false;
+        const isActive = syncData?.isActive || false;
+
+        if (status !== 'APPROVED' || !approved || !isActive) {
+          setView('pending-approval');
+        } else {
+          setView(assignedRole === 'USER' ? 'dashboard' : 'workspace');
+        }
       }
     } catch (err: any) {
       console.error("Login failed:", err);

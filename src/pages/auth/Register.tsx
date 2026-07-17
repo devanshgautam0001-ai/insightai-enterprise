@@ -132,62 +132,91 @@ export const Register: React.FC = () => {
       }
       const user = result.user;
 
-setUserEmail(email);
+      setUserEmail(email);
 
-// Get Firebase ID Token
-const idToken = await user.getIdToken(true);
+      // Helper function to race promises against a timeout
+      const withTimeout = <T,>(promise: Promise<T>, ms: number, operationName = "Operation"): Promise<T> => {
+        let timeoutId: any;
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          timeoutId = setTimeout(() => {
+            reject(new Error(`${operationName} timed out after ${ms}ms`));
+          }, ms);
+        });
+        return Promise.race([promise, timeoutPromise]).finally(() => {
+          clearTimeout(timeoutId);
+        });
+      };
 
-// Synchronize backend using Firebase token
-const data = await api.post("/api/auth/sync", {
-  idToken,
-  uid: user.uid,
-  email: user.email,
-  displayName: fullName,
-  tenantId,
-});
+      // Get Firebase ID Token with strict 10s timeout protection
+      const idToken = await withTimeout(user.getIdToken(true), 10000, "Firebase ID Token acquisition");
 
-if (data?.token) {
-  localStorage.setItem("insightai_jwt", data.token);
-}
+      // Synchronize backend using Firebase token with strict 10s timeout protection
+      const data = await withTimeout(
+        api.post("/api/auth/sync", {
+          idToken,
+          uid: user.uid,
+          email: user.email,
+          displayName: fullName,
+          tenantId,
+        }),
+        10000,
+        "Backend Sync API request"
+      );
 
-let assignedRole = data?.user?.role || "ANALYST";
-if (email === 'devanshgautam0001@gmail.com') {
-  assignedRole = 'OWNER';
-}
+      if (data?.token) {
+        localStorage.setItem("insightai_jwt", data.token);
+      }
 
-// Write profile to Firestore
-try {
-  await setDoc(
-    doc(firestoreDb, "users", user.uid),
-    {
-      displayName: fullName,
-      email: user.email,
-      photoURL: "",
-      lastLogin: new Date().toISOString(),
-      role: assignedRole,
-      tenantId,
-      createdAt: new Date().toISOString(),
-    },
-    { merge: true }
-  );
+      let assignedRole = data?.user?.role || "ANALYST";
+      let status = data?.user?.status || "PENDING";
+      let approved = data?.user?.approved || false;
+      let isActive = data?.user?.isActive || false;
 
-  await addDoc(collection(firestoreDb, "activityLogs"), {
-    userId: user.uid,
-    email: user.email,
-    action: "REGISTER",
-    timestamp: new Date().toISOString(),
-  });
-} catch (firestoreErr) {
-  console.warn("Firestore sync skipped:", firestoreErr);
-}
+      if (email === 'devanshgautam0001@gmail.com') {
+        assignedRole = 'OWNER';
+        status = 'APPROVED';
+        approved = true;
+        isActive = true;
+      }
 
-useUIStore.setState({
-  isLoggedIn: true,
-  userEmail: user.email ?? email,
-  userRole: assignedRole,
-});
+      // Write profile to Firestore asynchronously so it never blocks the login/registration flow
+      setDoc(
+        doc(firestoreDb, "users", user.uid),
+        {
+          displayName: fullName,
+          email: user.email,
+          photoURL: "",
+          lastLogin: new Date().toISOString(),
+          role: assignedRole,
+          tenantId,
+          createdAt: new Date().toISOString(),
+        },
+        { merge: true }
+      ).then(() => {
+        addDoc(collection(firestoreDb, "activityLogs"), {
+          userId: user.uid,
+          email: user.email,
+          action: "REGISTER",
+          timestamp: new Date().toISOString(),
+        }).catch(e => console.warn("Activity log failed:", e));
+      }).catch((firestoreErr) => {
+        console.warn("Firestore sync skipped/failed:", firestoreErr);
+      });
 
-setView("workspace");
+      useUIStore.setState({
+        isLoggedIn: true,
+        userEmail: user.email ?? email,
+        userRole: assignedRole,
+        userStatus: status,
+        userApproved: approved,
+        userActive: isActive,
+      });
+
+      if (status !== 'APPROVED' || !approved || !isActive) {
+        setView('pending-approval');
+      } else {
+        setView(assignedRole === 'USER' ? 'dashboard' : 'workspace');
+      }
     } catch (err: any) {
       console.error("Registration failed:", err);
       const diag = runFirebaseDiagnostics(err);

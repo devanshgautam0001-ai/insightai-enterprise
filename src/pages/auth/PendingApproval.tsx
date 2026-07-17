@@ -13,7 +13,36 @@ export const PendingApprovalScreen: React.FC = () => {
     setSyncing(true);
     setError(null);
     try {
-      const data = await api.post('/api/auth/sync', {});
+      const user = auth.currentUser;
+      if (!user) {
+        throw new Error("No active corporate authentication session found.");
+      }
+
+      // Helper function to race promises against a timeout
+      const withTimeout = <T,>(promise: Promise<T>, ms: number, operationName = "Operation"): Promise<T> => {
+        let timeoutId: any;
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          timeoutId = setTimeout(() => {
+            reject(new Error(`${operationName} timed out after ${ms}ms`));
+          }, ms);
+        });
+        return Promise.race([promise, timeoutPromise]).finally(() => {
+          clearTimeout(timeoutId);
+        });
+      };
+
+      const idToken = await withTimeout(user.getIdToken(true), 10000, "Firebase ID Token acquisition");
+      const data = await withTimeout(
+        api.post('/api/auth/sync', {
+          idToken,
+          uid: user.uid,
+          email: user.email,
+          displayName: user.displayName || user.email?.split('@')[0] || 'Enterprise Officer',
+        }),
+        10000,
+        "Backend Sync API request"
+      );
+
       if (data && data.token) {
         localStorage.setItem('insightai_jwt', data.token);
       }
@@ -43,7 +72,7 @@ export const PendingApprovalScreen: React.FC = () => {
       }
     } catch (err: any) {
       console.error('Failed to sync approval status:', err);
-      setError('Could not establish connection with security authorization servers.');
+      setError(err.message || 'Could not establish connection with security authorization servers.');
     } finally {
       setSyncing(false);
     }
