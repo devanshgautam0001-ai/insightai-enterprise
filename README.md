@@ -1,4 +1,4 @@
-<img width="1890" height="948" alt="Screenshot 2026-07-17 181335" src="https://github.com/user-attachments/assets/ed05c6e6-8195-427f-9a4d-e865a7185681" /><div align="center">
+
 
 # 🚀 InsightAI Enterprise
 ### Enterprise AI Analytics & Machine Learning Platform
