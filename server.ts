@@ -391,59 +391,184 @@ async function startServer() {
   }));
 
   // 2. Workspaces list & create
-  app.get("/api/workspaces", requireAuth, requireApproved, requireRole(['OWNER', 'ADMIN']), asyncHandler(async (req: AuthRequest, res) => {
-    if (!req.user) throw new AppError("Authentication required", 401, "UNAUTHENTICATED");
-    let [dbUser] = await db.select().from(schema.users).where(eq(schema.users.uid, req.user.uid));
-    if (!dbUser) {
-      dbUser = await getOrCreateUser(
-        req.user.uid,
-        req.user.email || "devanshgautam0001@gmail.com",
-        req.user.name || null,
-        req.user.picture || null,
-        (req.user.firebase as any)?.sign_in_provider || null
-      );
+  app.get("/api/workspaces", requireAuth, requireApproved, requireRole(['OWNER', 'ADMIN', 'ANALYST', 'USER']), asyncHandler(async (req: AuthRequest, res) => {
+    console.log("[WORKSPACES] GET /api/workspaces Request received");
+    if (!req.user) {
+      console.log("[WORKSPACES] GET /api/workspaces - Missing identity credentials");
+      return res.status(401).json({ error: "Authentication required", code: "UNAUTHENTICATED" });
     }
 
-    let workspaces = await db.select().from(schema.workspaces).where(eq(schema.workspaces.userId, dbUser.id));
-    if (workspaces.length === 0) {
-      console.log(`[Workspace API] Automatically provisioning "Default Workspace" for ${dbUser.email}`);
-      const [newWS] = await db.insert(schema.workspaces).values({
-        name: "Default Workspace",
-        division: "Analytics Division",
-        userId: dbUser.id,
-        memberCount: 1,
-        status: "active"
-      }).returning();
-      workspaces = [newWS];
+    let isSuccess = false;
+    try {
+      console.log(`[WORKSPACES] GET /api/workspaces - Looking up database user for uid: ${req.user.uid}`);
+      let [dbUser] = await withTimeout(
+        db.select().from(schema.users).where(eq(schema.users.uid, req.user.uid)),
+        3000,
+        "Query user in GET workspaces"
+      );
+
+      if (!dbUser) {
+        console.log("[WORKSPACES] GET /api/workspaces - User not found, running getOrCreateUser");
+        dbUser = await withTimeout(
+          getOrCreateUser(
+            req.user.uid,
+            req.user.email || "devanshgautam0001@gmail.com",
+            req.user.name || null,
+            req.user.picture || null,
+            (req.user.firebase as any)?.sign_in_provider || null
+          ),
+          3000,
+          "Create user in GET workspaces"
+        );
+      }
+      console.log(`[WORKSPACES] GET /api/workspaces - Resolved user ID: ${dbUser.id}`);
+
+      console.log(`[WORKSPACES] GET /api/workspaces - Querying workspaces from PostgreSQL for user ID: ${dbUser.id}`);
+      // Return workspaces belonging to current user
+      const workspaces = await withTimeout(
+        db.select().from(schema.workspaces).where(eq(schema.workspaces.userId, dbUser.id)),
+        3000,
+        "Select workspaces in GET"
+      );
+
+      console.log(`[WORKSPACES] GET /api/workspaces - Workspaces found: ${workspaces.length}`);
+      isSuccess = true;
+      return res.status(200).json({ success: true, data: workspaces });
+    } catch (err: any) {
+      console.error("[WORKSPACES] GET /api/workspaces - Error processing request:", err.message || err);
+      return res.status(500).json({
+        success: false,
+        error: { message: err.message || "Failed to load secure enterprise workspaces from database." },
+        data: []
+      });
+    } finally {
+      if (!isSuccess && !res.headersSent) {
+        return res.status(500).json({ success: false, error: { message: "Internal server error" }, data: [] });
+      }
     }
-    res.json(workspaces);
   }));
 
-  app.post("/api/workspaces", requireAuth, requireApproved, requireRole(['OWNER', 'ADMIN']), asyncHandler(async (req: AuthRequest, res) => {
-    if (!req.user) throw new AppError("Authentication required", 401, "UNAUTHENTICATED");
-    let [dbUser] = await db.select().from(schema.users).where(eq(schema.users.uid, req.user.uid));
-    if (!dbUser) {
-      dbUser = await getOrCreateUser(
-        req.user.uid,
-        req.user.email || "devanshgautam0001@gmail.com",
-        req.user.name || null,
-        req.user.picture || null,
-        (req.user.firebase as any)?.sign_in_provider || null
+  app.get("/api/workspaces/my", requireAuth, requireApproved, requireRole(['OWNER', 'ADMIN', 'ANALYST', 'USER']), asyncHandler(async (req: AuthRequest, res) => {
+    console.log("[WORKSPACES] GET /api/workspaces/my Request received");
+    if (!req.user) {
+      console.log("[WORKSPACES] GET /api/workspaces/my - Missing identity credentials");
+      return res.status(401).json({ error: "Authentication required", code: "UNAUTHENTICATED" });
+    }
+
+    let isSuccess = false;
+    try {
+      console.log(`[WORKSPACES] GET /api/workspaces/my - Looking up database user for uid: ${req.user.uid}`);
+      let [dbUser] = await withTimeout(
+        db.select().from(schema.users).where(eq(schema.users.uid, req.user.uid)),
+        3000,
+        "Query user in GET workspaces/my"
       );
+
+      if (!dbUser) {
+        console.log("[WORKSPACES] GET /api/workspaces/my - User not found, running getOrCreateUser");
+        dbUser = await withTimeout(
+          getOrCreateUser(
+            req.user.uid,
+            req.user.email || "devanshgautam0001@gmail.com",
+            req.user.name || null,
+            req.user.picture || null,
+            (req.user.firebase as any)?.sign_in_provider || null
+          ),
+          3000,
+          "Create user in GET workspaces/my"
+        );
+      }
+      console.log(`[WORKSPACES] GET /api/workspaces/my - Resolved user ID: ${dbUser.id}`);
+
+      console.log(`[WORKSPACES] GET /api/workspaces/my - Querying workspaces from PostgreSQL for user ID: ${dbUser.id}`);
+      const workspaces = await withTimeout(
+        db.select().from(schema.workspaces).where(eq(schema.workspaces.userId, dbUser.id)),
+        3000,
+        "Select workspaces/my"
+      );
+
+      console.log(`[WORKSPACES] GET /api/workspaces/my - Workspaces found: ${workspaces.length}`);
+      isSuccess = true;
+      return res.status(200).json({ success: true, data: workspaces });
+    } catch (err: any) {
+      console.error("[WORKSPACES] GET /api/workspaces/my - Error processing request:", err.message || err);
+      return res.status(500).json({
+        success: false,
+        error: { message: err.message || "Failed to load secure enterprise workspaces from database." },
+        data: []
+      });
+    } finally {
+      if (!isSuccess && !res.headersSent) {
+        return res.status(500).json({ success: false, error: { message: "Internal server error" }, data: [] });
+      }
+    }
+  }));
+
+  app.post("/api/workspaces", requireAuth, requireApproved, requireRole(['OWNER', 'ADMIN', 'ANALYST', 'USER']), asyncHandler(async (req: AuthRequest, res) => {
+    console.log("[WORKSPACES] POST /api/workspaces Request received");
+    if (!req.user) {
+      console.log("[WORKSPACES] POST /api/workspaces - Missing identity credentials");
+      return res.status(401).json({ error: "Authentication required", code: "UNAUTHENTICATED" });
     }
 
     const { name, division } = req.body;
-    if (!name || !division) throw new AppError("Name and division are required", 400, "VALIDATION_ERROR");
+    if (!name || !division) {
+      console.log("[WORKSPACES] POST /api/workspaces - Missing name or division");
+      return res.status(400).json({ error: "Name and division are required", code: "VALIDATION_ERROR" });
+    }
 
-    const [newWS] = await db.insert(schema.workspaces).values({
-      name,
-      division,
-      userId: dbUser.id,
-      memberCount: 1,
-      status: "active"
-    }).returning();
+    let isSuccess = false;
+    try {
+      console.log(`[WORKSPACES] POST /api/workspaces - Looking up database user for uid: ${req.user.uid}`);
+      let [dbUser] = await withTimeout(
+        db.select().from(schema.users).where(eq(schema.users.uid, req.user.uid)),
+        3000,
+        "Query user in POST workspaces"
+      );
 
-    res.json(newWS);
+      if (!dbUser) {
+        console.log("[WORKSPACES] POST /api/workspaces - User not found, running getOrCreateUser");
+        dbUser = await withTimeout(
+          getOrCreateUser(
+            req.user.uid,
+            req.user.email || "devanshgautam0001@gmail.com",
+            req.user.name || null,
+            req.user.picture || null,
+            (req.user.firebase as any)?.sign_in_provider || null
+          ),
+          3000,
+          "Create user in POST workspaces"
+        );
+      }
+      console.log(`[WORKSPACES] POST /api/workspaces - Resolved user ID: ${dbUser.id}`);
+
+      console.log(`[WORKSPACES] POST /api/workspaces - Inserting new workspace into PostgreSQL`);
+      const [newWS] = await withTimeout(
+        db.insert(schema.workspaces).values({
+          name,
+          division,
+          userId: dbUser.id,
+          memberCount: 1,
+          status: "active"
+        }).returning(),
+        3000,
+        "Insert workspace"
+      );
+
+      console.log(`[WORKSPACES] POST /api/workspaces - Workspace created successfully with ID: ${newWS.id}`);
+      isSuccess = true;
+      return res.status(200).json({ success: true, data: newWS });
+    } catch (err: any) {
+      console.error("[WORKSPACES] POST /api/workspaces - Error processing request:", err.message || err);
+      return res.status(500).json({
+        success: false,
+        error: { message: err.message || "Failed to create new tenant workspace." }
+      });
+    } finally {
+      if (!isSuccess && !res.headersSent) {
+        return res.status(500).json({ success: false, error: { message: "Internal server error" } });
+      }
+    }
   }));
 
   // 3. Projects list & create
