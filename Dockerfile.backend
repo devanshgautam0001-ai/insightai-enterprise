@@ -1,0 +1,51 @@
+# =========================================================
+# Stage 1: Build TypeScript Backend Application
+# =========================================================
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+# Copy dependency manifests
+COPY package*.json ./
+
+# Install full dependencies (including build devDependencies)
+RUN npm ci
+
+# Copy full source and configuration files
+COPY . .
+
+# Run production build (compiles backend to dist/server.cjs and frontend to dist/)
+ENV NODE_ENV=production
+RUN npm run build
+
+# =========================================================
+# Stage 2: Secure and Lightweight Production Runtime
+# =========================================================
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Set production environment
+ENV NODE_ENV=production
+ENV PORT=3000
+
+# Copy package configurations
+COPY package*.json ./
+
+# Install ONLY production dependencies to keep the image extremely light
+RUN npm ci --only=production
+
+# Copy compiled backend bundle and static frontend files from builder
+COPY --from=builder /app/dist ./dist
+
+# Create a non-privileged system user for process execution (security hardening)
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup \
+    && chown -R appuser:appgroup /app
+
+USER appuser
+
+# Expose backend service port
+EXPOSE 3000
+
+# Start server using bundled output
+CMD ["node", "dist/server.cjs"]

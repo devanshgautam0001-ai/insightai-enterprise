@@ -1,0 +1,43 @@
+name: CI - Integration & Quality Gates
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+
+jobs:
+  audit-and-validate:
+    name: Code Quality, Security, and Build Verification
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js Environment
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: |
+          npm ci
+
+      - name: Run Linter and Static Type Analysis
+        run: |
+          npm run lint
+
+      - name: Production Compiler Check
+        run: |
+          npm run build
+        env:
+          NODE_ENV: production
+          GEMINI_API_KEY: "mock_ci_key_for_build"
+          APP_URL: "http://localhost:3000"
+
+      - name: Docker Image Dry-Run Build
+        run: |
+          docker build -t insightai-frontend-test -f Dockerfile.frontend .
+          docker build -t insightai-backend-test -f Dockerfile.backend .

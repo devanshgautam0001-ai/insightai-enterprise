@@ -1,0 +1,112 @@
+version: "3.8"
+
+services:
+  # =========================================================
+  # Frontend Application (Nginx SPA Server + Reverse Proxy)
+  # =========================================================
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    image: insightai-frontend:latest
+    container_name: insightai-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - insightai_network
+    restart: unless-stopped
+
+  # =========================================================
+  # Backend API Server (Node/Express TypeScript Engine)
+  # =========================================================
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    image: insightai-backend:latest
+    container_name: insightai-backend
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - JWT_SECRET=${JWT_SECRET:-enterprise_jwt_super_secret_key_change_me}
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET:-enterprise_jwt_refresh_super_secret_key_change_me}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-postgres_password_99}@postgres:5432/${POSTGRES_DB:-insightai_prod}?schema=public
+      - REDIS_URL=redis://redis:6379/0
+      - RATE_LIMIT_WINDOW_MS=900000 # 15 minutes
+      - RATE_LIMIT_MAX_REQUESTS=100
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-aes_key_32_bytes_long_change_me!!}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - insightai_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/api/health').then(r => r.ok ? process.exit(0) : process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # =========================================================
+  # Database Service (PostgreSQL 16 Engine)
+  # =========================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: insightai-postgres
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-admin}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres_password_99}
+      - POSTGRES_DB=${POSTGRES_DB:-insightai_prod}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - insightai_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-admin} -d ${POSTGRES_DB:-insightai_prod}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # =========================================================
+  # Cache & Rate Limiting Store (Redis 7 Engine)
+  # =========================================================
+  redis:
+    image: redis:7-alpine
+    container_name: insightai-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    networks:
+      - insightai_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+# =========================================================
+# Networking & Volume Configuration
+# =========================================================
+networks:
+  insightai_network:
+    driver: bridge
+
+volumes:
+  pgdata:
+    driver: local
+  redisdata:
+    driver: local

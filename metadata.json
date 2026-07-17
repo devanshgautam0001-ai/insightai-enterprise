@@ -1,0 +1,6 @@
+{
+  "name": "InsightAI Enterprise",
+  "description": "Enterprise End-to-End AI-Powered Data Analytics Platform, transforming raw data into AI-powered business decisions.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
