@@ -39,7 +39,7 @@ export const createPool = () => {
     return new Pool({
       connectionString,
       ssl,
-      connectionTimeoutMillis: 15000,
+      connectionTimeoutMillis: 1500,
       statement_timeout: 5000, // Fail any query taking longer than 5 seconds
       idle_in_transaction_session_timeout: 5000 // Close transaction if left idle for more than 5 seconds
     });
@@ -93,7 +93,7 @@ export const createPool = () => {
     database: cleanEnvVal(process.env.SQL_DB_NAME),
     port: parseInt(cleanEnvVal(process.env.SQL_PORT) || '5432', 10),
     ssl,
-    connectionTimeoutMillis: 15000,
+    connectionTimeoutMillis: 1500,
     statement_timeout: 5000, // Fail any query taking longer than 5 seconds
     idle_in_transaction_session_timeout: 5000 // Close transaction if left idle for more than 5 seconds
   });
@@ -106,144 +106,6 @@ export const pool = createPool();
 pool.on('error', (err) => {
   console.error('Unexpected error on idle SQL pool client:', err);
 });
-
-import { EventEmitter } from 'events';
-import { executeFallbackQuery, useFallback, setUseFallback } from './fallback.ts';
-
-// Mock client that extends EventEmitter to support pg-pool event handler operations
-class MockClient extends EventEmitter {
-  async query(sql: any, params?: any, cb?: any): Promise<any> {
-    if (typeof cb === 'function') {
-      executeFallbackQuery(sql, params)
-        .then(res => cb(null, res))
-        .catch(err => cb(err));
-      return;
-    }
-    return executeFallbackQuery(sql, params);
-  }
-  release() {}
-}
-
-// Save the original pool methods
-const originalQuery = pool.query.bind(pool);
-const originalConnect = pool.connect.bind(pool);
-
-// Override query
-pool.query = async function (sql: any, params?: any, cb?: any): Promise<any> {
-  // If callback is provided, support it
-  if (typeof cb === 'function') {
-    if (useFallback) {
-      executeFallbackQuery(sql, params)
-        .then(res => cb(null, res))
-        .catch(err => cb(err));
-      return;
-    }
-
-    const wrappedCb = (err: any, res: any) => {
-      if (err) {
-        console.log("[Database] Redirecting pool query to local database.");
-        setUseFallback(true);
-        executeFallbackQuery(sql, params)
-          .then(fallbackRes => cb(null, fallbackRes))
-          .catch(fallbackErr => cb(fallbackErr));
-      } else {
-        cb(null, res);
-      }
-    };
-
-    try {
-      return originalQuery(sql, params, wrappedCb);
-    } catch (err) {
-      console.log("[Database] Local database redirect.");
-      setUseFallback(true);
-      executeFallbackQuery(sql, params)
-        .then(fallbackRes => cb(null, fallbackRes))
-        .catch(fallbackErr => cb(fallbackErr));
-    }
-    return;
-  }
-
-  if (useFallback) {
-    return executeFallbackQuery(sql, params) as any;
-  }
-  try {
-    return await originalQuery(sql, params);
-  } catch (err: any) {
-    console.log("[Database] Redirected query to local storage.");
-    setUseFallback(true);
-    return await executeFallbackQuery(sql, params) as any;
-  }
-} as any;
-
-// Override connect
-pool.connect = async function (cb?: any): Promise<any> {
-  if (useFallback) {
-    const mockClient = new MockClient();
-    if (typeof cb === 'function') {
-      cb(null, mockClient, () => {});
-    }
-    return mockClient as any;
-  }
-
-  try {
-    const client = await originalConnect();
-    // Wrap client query as well in case it fails during execution
-    const originalClientQuery = client.query.bind(client);
-    client.query = async function (sql: any, params?: any, clientCb?: any): Promise<any> {
-      if (typeof clientCb === 'function') {
-        if (useFallback) {
-          executeFallbackQuery(sql, params)
-            .then(res => clientCb(null, res))
-            .catch(err => clientCb(err));
-          return;
-        }
-
-        const wrappedClientCb = (err: any, res: any) => {
-          if (err) {
-            console.log("[Database] Redirecting client query to local database.");
-            setUseFallback(true);
-            executeFallbackQuery(sql, params)
-              .then(fallbackRes => clientCb(null, fallbackRes))
-              .catch(fallbackErr => clientCb(fallbackErr));
-          } else {
-            clientCb(null, res);
-          }
-        };
-
-        try {
-          return originalClientQuery(sql, params, wrappedClientCb);
-        } catch (err) {
-          console.log("[Database] Local client database redirect.");
-          setUseFallback(true);
-          executeFallbackQuery(sql, params)
-            .then(fallbackRes => clientCb(null, fallbackRes))
-            .catch(fallbackErr => clientCb(fallbackErr));
-        }
-        return;
-      }
-
-      if (useFallback) {
-        return executeFallbackQuery(sql, params) as any;
-      }
-      try {
-        return await originalClientQuery(sql, params);
-      } catch (err: any) {
-        console.log("[Database] Redirected client query to local storage.");
-        setUseFallback(true);
-        return await executeFallbackQuery(sql, params) as any;
-      }
-    } as any;
-    return client;
-  } catch (err: any) {
-    console.log("[Database] Redirecting connection to local fallback storage.");
-    setUseFallback(true);
-    const mockClient = new MockClient();
-    if (typeof cb === 'function') {
-      cb(null, mockClient, () => {});
-    }
-    return mockClient as any;
-  }
-} as any;
 
 // Initialize Drizzle with the pool and schema.
 export const db = drizzle(pool, { schema });

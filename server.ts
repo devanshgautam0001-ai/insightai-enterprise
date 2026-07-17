@@ -192,43 +192,24 @@ async function startServer() {
     });
   };
 
-  app.post("/api/auth/sync", requireAuth, asyncHandler(async (req: AuthRequest, res) => {
-    let isSuccess = false;
+  app.post("/api/auth/sync", requireAuth, asyncHandler(async (req: AuthRequest, res, next) => {
     try {
       if (!req.user || !req.user.uid || !req.user.email) {
         throw new AppError("Missing identity credentials in token", 400, "VALIDATION_ERROR");
       }
 
-      let dbUser: any;
-      try {
-        dbUser = await withTimeout(
-          getOrCreateUser(
-            req.user.uid,
-            req.user.email,
-            req.user.name || null,
-            req.user.picture || null,
-            (req.user.firebase as any)?.sign_in_provider || null
-          ),
-          3000,
-          "PostgreSQL sync getOrCreateUser"
-        );
-      } catch (dbErr: any) {
-        console.warn("[Sync Auth] PostgreSQL database is offline. Proceeding with safe transient session fallback:", dbErr.message || dbErr);
-        dbUser = {
-          id: -1,
-          uid: req.user.uid,
-          email: req.user.email,
-          displayName: req.user.name || "Enterprise User",
-          photoUrl: req.user.picture || null,
-          provider: (req.user.firebase as any)?.sign_in_provider || "offline",
-          role: req.user.email === 'devanshgautam0001@gmail.com' ? 'OWNER' : 'ANALYST',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          status: 'APPROVED',
-          approved: true,
-          isActive: true
-        };
-      }
+      console.log("[SYNC] Syncing user in PostgreSQL database...");
+      const dbUser = await withTimeout(
+        getOrCreateUser(
+          req.user.uid,
+          req.user.email,
+          req.user.name || null,
+          req.user.picture || null,
+          (req.user.firebase as any)?.sign_in_provider || null
+        ),
+        3000,
+        "PostgreSQL sync getOrCreateUser"
+      );
       
       const userRole = req.user.email === 'devanshgautam0001@gmail.com' ? 'OWNER' : (dbUser?.role || 'ANALYST');
 
@@ -249,19 +230,17 @@ async function startServer() {
       );
 
       console.log("[SYNC] Sending response");
-      isSuccess = true;
       res.json({ user: { ...dbUser, role: userRole }, token });
     } catch (err: any) {
       console.error("[SYNC] Error processing auth sync:", err);
+      if (isPostgresError(err)) {
+        return next(err);
+      }
       res.status(err.statusCode || 500).json({
         error: err.message || "Failed to synchronize security session.",
         code: err.code || "INTERNAL_SERVER_ERROR",
         details: err.details
       });
-    } finally {
-      if (!isSuccess && !res.headersSent) {
-        res.status(500).json({ error: "Failed to synchronize authentication session." });
-      }
     }
   }));
 
@@ -391,14 +370,13 @@ async function startServer() {
   }));
 
   // 2. Workspaces list & create
-  app.get("/api/workspaces", requireAuth, requireApproved, requireRole(['OWNER', 'ADMIN', 'ANALYST', 'USER']), asyncHandler(async (req: AuthRequest, res) => {
+  app.get("/api/workspaces", requireAuth, requireApproved, requireRole(['OWNER', 'ADMIN', 'ANALYST', 'USER']), asyncHandler(async (req: AuthRequest, res, next) => {
     console.log("[WORKSPACES] GET /api/workspaces Request received");
     if (!req.user) {
       console.log("[WORKSPACES] GET /api/workspaces - Missing identity credentials");
       return res.status(401).json({ error: "Authentication required", code: "UNAUTHENTICATED" });
     }
 
-    let isSuccess = false;
     try {
       console.log(`[WORKSPACES] GET /api/workspaces - Looking up database user for uid: ${req.user.uid}`);
       let [dbUser] = await withTimeout(
@@ -432,30 +410,27 @@ async function startServer() {
       );
 
       console.log(`[WORKSPACES] GET /api/workspaces - Workspaces found: ${workspaces.length}`);
-      isSuccess = true;
       return res.status(200).json({ success: true, data: workspaces });
     } catch (err: any) {
       console.error("[WORKSPACES] GET /api/workspaces - Error processing request:", err.message || err);
+      if (isPostgresError(err)) {
+        return next(err);
+      }
       return res.status(500).json({
         success: false,
         error: { message: err.message || "Failed to load secure enterprise workspaces from database." },
         data: []
       });
-    } finally {
-      if (!isSuccess && !res.headersSent) {
-        return res.status(500).json({ success: false, error: { message: "Internal server error" }, data: [] });
-      }
     }
   }));
 
-  app.get("/api/workspaces/my", requireAuth, requireApproved, requireRole(['OWNER', 'ADMIN', 'ANALYST', 'USER']), asyncHandler(async (req: AuthRequest, res) => {
+  app.get("/api/workspaces/my", requireAuth, requireApproved, requireRole(['OWNER', 'ADMIN', 'ANALYST', 'USER']), asyncHandler(async (req: AuthRequest, res, next) => {
     console.log("[WORKSPACES] GET /api/workspaces/my Request received");
     if (!req.user) {
       console.log("[WORKSPACES] GET /api/workspaces/my - Missing identity credentials");
       return res.status(401).json({ error: "Authentication required", code: "UNAUTHENTICATED" });
     }
 
-    let isSuccess = false;
     try {
       console.log(`[WORKSPACES] GET /api/workspaces/my - Looking up database user for uid: ${req.user.uid}`);
       let [dbUser] = await withTimeout(
@@ -488,23 +463,21 @@ async function startServer() {
       );
 
       console.log(`[WORKSPACES] GET /api/workspaces/my - Workspaces found: ${workspaces.length}`);
-      isSuccess = true;
       return res.status(200).json({ success: true, data: workspaces });
     } catch (err: any) {
       console.error("[WORKSPACES] GET /api/workspaces/my - Error processing request:", err.message || err);
+      if (isPostgresError(err)) {
+        return next(err);
+      }
       return res.status(500).json({
         success: false,
         error: { message: err.message || "Failed to load secure enterprise workspaces from database." },
         data: []
       });
-    } finally {
-      if (!isSuccess && !res.headersSent) {
-        return res.status(500).json({ success: false, error: { message: "Internal server error" }, data: [] });
-      }
     }
   }));
 
-  app.post("/api/workspaces", requireAuth, requireApproved, requireRole(['OWNER', 'ADMIN', 'ANALYST', 'USER']), asyncHandler(async (req: AuthRequest, res) => {
+  app.post("/api/workspaces", requireAuth, requireApproved, requireRole(['OWNER', 'ADMIN', 'ANALYST', 'USER']), asyncHandler(async (req: AuthRequest, res, next) => {
     console.log("[WORKSPACES] POST /api/workspaces Request received");
     if (!req.user) {
       console.log("[WORKSPACES] POST /api/workspaces - Missing identity credentials");
@@ -517,7 +490,6 @@ async function startServer() {
       return res.status(400).json({ error: "Name and division are required", code: "VALIDATION_ERROR" });
     }
 
-    let isSuccess = false;
     try {
       console.log(`[WORKSPACES] POST /api/workspaces - Looking up database user for uid: ${req.user.uid}`);
       let [dbUser] = await withTimeout(
@@ -556,18 +528,16 @@ async function startServer() {
       );
 
       console.log(`[WORKSPACES] POST /api/workspaces - Workspace created successfully with ID: ${newWS.id}`);
-      isSuccess = true;
       return res.status(200).json({ success: true, data: newWS });
     } catch (err: any) {
       console.error("[WORKSPACES] POST /api/workspaces - Error processing request:", err.message || err);
+      if (isPostgresError(err)) {
+        return next(err);
+      }
       return res.status(500).json({
         success: false,
         error: { message: err.message || "Failed to create new tenant workspace." }
       });
-    } finally {
-      if (!isSuccess && !res.headersSent) {
-        return res.status(500).json({ success: false, error: { message: "Internal server error" } });
-      }
     }
   }));
 
@@ -1283,13 +1253,9 @@ Respond to the latest user inquiry as a brilliant, principal data scientist and 
     // Check if it's a PostgreSQL connection/query exception
     if (isPostgresError(err)) {
       console.error("CRITICAL PostgreSQL Failure Stack Trace:", err.stack || err);
-      return res.status(500).json({
+      return res.status(503).json({
         success: false,
-        error: {
-          code: "DATABASE_CONNECTION_FAILURE",
-          message: "Unable to connect to the database. Please try again later.",
-          details: err.message
-        }
+        message: "Database temporarily unavailable."
       });
     }
 

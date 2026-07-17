@@ -43,6 +43,24 @@ const withTimeout = <T>(promise: Promise<T>, ms: number, label: string): Promise
   });
 };
 
+export function isPostgresError(error: any): boolean {
+  if (!error) return false;
+  const message = error.message ? String(error.message).toLowerCase() : '';
+  const code = error.code ? String(error.code).toLowerCase() : '';
+  return (
+    code.startsWith('28') || // authorization failure
+    code.startsWith('08') || // connection exception
+    code === 'econnrefused' ||
+    code === '57p01' || // admin shutdown
+    message.includes('postgres') ||
+    message.includes('connection') ||
+    message.includes('drizzle') ||
+    message.includes('dial') ||
+    message.includes('query') ||
+    message.includes('pool')
+  );
+}
+
 export const requireAuth = async (
   req: AuthRequest,
   res: Response,
@@ -169,7 +187,13 @@ export const requireAuth = async (
         console.log("[SYNC] Database complete");
       }
     } catch (dbErr: any) {
-      console.warn('[Auth Middleware] Database access failed, using token details/fallback:', dbErr.message || dbErr);
+      console.error('[Auth Middleware] Database access failed:', dbErr.message || dbErr);
+      if (isPostgresError(dbErr)) {
+        return res.status(503).json({
+          success: false,
+          message: "Database temporarily unavailable."
+        });
+      }
       if (decodedToken.email === 'devanshgautam0001@gmail.com') {
         role = 'OWNER';
         status = 'APPROVED';
@@ -177,7 +201,7 @@ export const requireAuth = async (
         isActive = true;
       }
       if (isSyncEndpoint) {
-        console.log("[SYNC] Database failed (bypassing with transient profile)");
+        console.log("[SYNC] Database failed");
       }
     }
 
@@ -229,8 +253,14 @@ export const requireAuth = async (
             isActive = dbUser.isActive !== undefined ? dbUser.isActive : false;
           }
         }
-      } catch (dbErr) {
-        console.warn('[Auth Middleware] Custom JWT database lookup failed:', dbErr);
+      } catch (dbErr: any) {
+        console.error('[Auth Middleware] Custom JWT database lookup failed:', dbErr);
+        if (isPostgresError(dbErr)) {
+          return res.status(503).json({
+            success: false,
+            message: "Database temporarily unavailable."
+          });
+        }
         if (email === 'devanshgautam0001@gmail.com') {
           role = 'OWNER';
           status = 'APPROVED';
