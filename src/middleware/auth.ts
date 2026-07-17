@@ -30,17 +30,42 @@ export interface AuthRequest extends Request {
   };
 }
 
+// Helper to race a promise with a timeout
+const withTimeout = <T>(promise: Promise<T>, ms: number, label: string): Promise<T> => {
+  let timeoutId: NodeJS.Timeout;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${ms}ms`));
+    }, ms);
+  });
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    clearTimeout(timeoutId);
+  });
+};
+
 export const requireAuth = async (
   req: AuthRequest,
   res: Response,
   next: NextFunction
 ) => {
+  const isSyncEndpoint = req.path === '/auth/sync';
+  
+  if (isSyncEndpoint) {
+    console.log("[SYNC] Request received");
+  }
+
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    if (isSyncEndpoint) {
+      console.log("[SYNC] Missing token");
+    }
     return res.status(401).json({ error: 'Unauthorized: Missing token' });
   }
 
   const token = authHeader.split('Bearer ')[1];
+  if (isSyncEndpoint) {
+    console.log("[SYNC] Token extracted");
+  }
 
   // 1. Decode token to inspect its type dynamically
   let isFirebaseToken = false;
@@ -59,73 +84,112 @@ export const requireAuth = async (
   }
 
   if (isFirebaseToken) {
+    if (isSyncEndpoint) {
+      console.log("[SYNC] Verifying Firebase token");
+    }
     // 2. Process as a Firebase ID token
+    let decodedToken: DecodedIdToken;
     try {
-      const decodedToken = await adminAuth.verifyIdToken(token);
-      
-      let role = 'NONE';
-      let status = 'PENDING';
-      let approved = false;
-      let isActive = false;
-      let dbUser: any;
+      // Apply a strict 4-second timeout on verifying the Firebase token
+      decodedToken = await withTimeout(
+        adminAuth.verifyIdToken(token),
+        4000,
+        "Firebase Token Verification"
+      );
+      if (isSyncEndpoint) {
+        console.log("[SYNC] Token verified");
+      }
+    } catch (firebaseError: any) {
+      console.error('[Auth Middleware] Firebase ID Token verification failed:', firebaseError.message || firebaseError);
+      return res.status(401).json({ error: `Unauthorized: Invalid Firebase token. Details: ${firebaseError.message || firebaseError}` });
+    }
 
+    let role = 'NONE';
+    let status = 'PENDING';
+    let approved = false;
+    let isActive = false;
+    let dbUser: any = null;
+
+    if (decodedToken.email === 'devanshgautam0001@gmail.com') {
+      role = 'OWNER';
+      status = 'APPROVED';
+      approved = true;
+      isActive = true;
+    }
+
+    if (isSyncEndpoint) {
+      console.log("[SYNC] Looking up user");
+    }
+
+    // Attempt database lookup but fail gracefully with strict 3-second timeout if PostgreSQL is offline/unavailable
+    try {
+      const results = await withTimeout(
+        db.select().from(users).where(eq(users.uid, decodedToken.uid)),
+        3000,
+        "PostgreSQL select user"
+      );
+      dbUser = results[0];
+
+      if (!dbUser && decodedToken.email) {
+        if (isSyncEndpoint) {
+          console.log("[SYNC] Creating user");
+        }
+        dbUser = await withTimeout(
+          getOrCreateUser(
+            decodedToken.uid,
+            decodedToken.email,
+            decodedToken.name || null,
+            decodedToken.picture || null,
+            (decodedToken.firebase as any)?.sign_in_provider || null
+          ),
+          3000,
+          "PostgreSQL getOrCreateUser"
+        );
+      } else {
+        if (isSyncEndpoint) {
+          console.log("[SYNC] User found");
+        }
+      }
+
+      if (dbUser) {
+        // If the logged in email is owner, override database fields to protect owner
+        if (dbUser.email === 'devanshgautam0001@gmail.com') {
+          role = 'OWNER';
+          status = 'APPROVED';
+          approved = true;
+          isActive = true;
+        } else {
+          role = dbUser.role || 'NONE';
+          status = dbUser.status || 'PENDING';
+          approved = dbUser.approved !== undefined ? dbUser.approved : false;
+          isActive = dbUser.isActive !== undefined ? dbUser.isActive : false;
+        }
+      }
+      if (isSyncEndpoint) {
+        console.log("[SYNC] Database complete");
+      }
+    } catch (dbErr: any) {
+      console.warn('[Auth Middleware] Database access failed, using token details/fallback:', dbErr.message || dbErr);
       if (decodedToken.email === 'devanshgautam0001@gmail.com') {
         role = 'OWNER';
         status = 'APPROVED';
         approved = true;
         isActive = true;
       }
-
-      // Attempt database lookup but fail gracefully if PostgreSQL is offline/unavailable
-      try {
-        const results = await db.select().from(users).where(eq(users.uid, decodedToken.uid));
-        dbUser = results[0];
-        if (!dbUser && decodedToken.email) {
-          dbUser = await getOrCreateUser(
-            decodedToken.uid,
-            decodedToken.email,
-            decodedToken.name || null,
-            decodedToken.picture || null,
-            (decodedToken.firebase as any)?.sign_in_provider || null
-          );
-        }
-        if (dbUser) {
-          // If the logged in email is owner, override database fields to protect owner
-          if (dbUser.email === 'devanshgautam0001@gmail.com') {
-            role = 'OWNER';
-            status = 'APPROVED';
-            approved = true;
-            isActive = true;
-          } else {
-            role = dbUser.role || 'NONE';
-            status = dbUser.status || 'PENDING';
-            approved = dbUser.approved !== undefined ? dbUser.approved : false;
-            isActive = dbUser.isActive !== undefined ? dbUser.isActive : false;
-          }
-        }
-      } catch (dbErr) {
-        console.warn('[Auth Middleware] Database access failed, using token details:', dbErr);
-        if (decodedToken.email === 'devanshgautam0001@gmail.com') {
-          role = 'OWNER';
-          status = 'APPROVED';
-          approved = true;
-          isActive = true;
-        }
+      if (isSyncEndpoint) {
+        console.log("[SYNC] Database failed (bypassing with transient profile)");
       }
-
-      req.user = {
-        ...decodedToken,
-        id: dbUser?.id,
-        role,
-        status,
-        approved,
-        isActive,
-      } as any;
-      return next();
-    } catch (firebaseError: any) {
-      console.error('[Auth Middleware] Firebase ID Token verification failed:', firebaseError.message || firebaseError);
-      return res.status(401).json({ error: 'Unauthorized: Invalid Firebase token' });
     }
+
+    req.user = {
+      ...decodedToken,
+      id: dbUser?.id,
+      role,
+      status,
+      approved,
+      isActive,
+    } as any;
+    return next();
   } else {
     // 3. Process as our custom application JWT
     try {
@@ -146,7 +210,11 @@ export const requireAuth = async (
       }
 
       try {
-        const results = await db.select().from(users).where(eq(users.uid, decoded.uid));
+        const results = await withTimeout(
+          db.select().from(users).where(eq(users.uid, decoded.uid)),
+          3000,
+          "PostgreSQL select session"
+        );
         dbUser = results[0];
         if (dbUser) {
           if (dbUser.email === 'devanshgautam0001@gmail.com') {

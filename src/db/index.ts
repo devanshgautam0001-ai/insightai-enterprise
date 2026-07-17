@@ -40,6 +40,8 @@ export const createPool = () => {
       connectionString,
       ssl,
       connectionTimeoutMillis: 15000,
+      statement_timeout: 5000, // Fail any query taking longer than 5 seconds
+      idle_in_transaction_session_timeout: 5000 // Close transaction if left idle for more than 5 seconds
     });
   }
 
@@ -92,6 +94,8 @@ export const createPool = () => {
     port: parseInt(cleanEnvVal(process.env.SQL_PORT) || '5432', 10),
     ssl,
     connectionTimeoutMillis: 15000,
+    statement_timeout: 5000, // Fail any query taking longer than 5 seconds
+    idle_in_transaction_session_timeout: 5000 // Close transaction if left idle for more than 5 seconds
   });
 };
 

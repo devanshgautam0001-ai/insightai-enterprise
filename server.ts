@@ -179,54 +179,90 @@ async function startServer() {
     res.json({ user: { ...dbUser, role: userRole }, token });
   }));
 
+  // Helper to race a promise with a timeout in server.ts
+  const withTimeout = <T>(promise: Promise<T>, ms: number, label: string): Promise<T> => {
+    let timeoutId: NodeJS.Timeout;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(() => {
+        reject(new Error(`${label} timed out after ${ms}ms`));
+      }, ms);
+    });
+    return Promise.race([promise, timeoutPromise]).finally(() => {
+      clearTimeout(timeoutId);
+    });
+  };
+
   app.post("/api/auth/sync", requireAuth, asyncHandler(async (req: AuthRequest, res) => {
-    if (!req.user || !req.user.uid || !req.user.email) {
-      throw new AppError("Missing identity credentials in token", 400, "VALIDATION_ERROR");
-    }
-
-    let dbUser: any;
+    let isSuccess = false;
     try {
-      dbUser = await getOrCreateUser(
-        req.user.uid,
-        req.user.email,
-        req.user.name || null,
-        req.user.picture || null,
-        (req.user.firebase as any)?.sign_in_provider || null
+      if (!req.user || !req.user.uid || !req.user.email) {
+        throw new AppError("Missing identity credentials in token", 400, "VALIDATION_ERROR");
+      }
+
+      let dbUser: any;
+      try {
+        dbUser = await withTimeout(
+          getOrCreateUser(
+            req.user.uid,
+            req.user.email,
+            req.user.name || null,
+            req.user.picture || null,
+            (req.user.firebase as any)?.sign_in_provider || null
+          ),
+          3000,
+          "PostgreSQL sync getOrCreateUser"
+        );
+      } catch (dbErr: any) {
+        console.warn("[Sync Auth] PostgreSQL database is offline. Proceeding with safe transient session fallback:", dbErr.message || dbErr);
+        dbUser = {
+          id: -1,
+          uid: req.user.uid,
+          email: req.user.email,
+          displayName: req.user.name || "Enterprise User",
+          photoUrl: req.user.picture || null,
+          provider: (req.user.firebase as any)?.sign_in_provider || "offline",
+          role: req.user.email === 'devanshgautam0001@gmail.com' ? 'OWNER' : 'ANALYST',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          status: 'APPROVED',
+          approved: true,
+          isActive: true
+        };
+      }
+      
+      const userRole = req.user.email === 'devanshgautam0001@gmail.com' ? 'OWNER' : (dbUser?.role || 'ANALYST');
+
+      // Generate secure JWT containing uid, email and role
+      const JWT_SECRET = cleanEnvVal(process.env.JWT_SECRET) || 'fallback-secret-key-123';
+      const token = jwt.sign(
+        {
+          uid: dbUser.uid,
+          email: dbUser.email,
+          role: userRole,
+          id: dbUser.id,
+          status: dbUser.status || 'PENDING',
+          approved: dbUser.approved || false,
+          isActive: dbUser.isActive || false
+        },
+        JWT_SECRET,
+        { expiresIn: '24h' }
       );
-    } catch (dbErr) {
-      console.warn("[Sync Auth] PostgreSQL database is offline. Proceeding with safe transient session fallback:", dbErr);
-      dbUser = {
-        id: -1,
-        uid: req.user.uid,
-        email: req.user.email,
-        displayName: req.user.name || "Enterprise User",
-        photoUrl: req.user.picture || null,
-        provider: (req.user.firebase as any)?.sign_in_provider || "offline",
-        role: req.user.email === 'devanshgautam0001@gmail.com' ? 'OWNER' : 'ANALYST',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
+
+      console.log("[SYNC] Sending response");
+      isSuccess = true;
+      res.json({ user: { ...dbUser, role: userRole }, token });
+    } catch (err: any) {
+      console.error("[SYNC] Error processing auth sync:", err);
+      res.status(err.statusCode || 500).json({
+        error: err.message || "Failed to synchronize security session.",
+        code: err.code || "INTERNAL_SERVER_ERROR",
+        details: err.details
+      });
+    } finally {
+      if (!isSuccess && !res.headersSent) {
+        res.status(500).json({ error: "Failed to synchronize authentication session." });
+      }
     }
-    
-    const userRole = req.user.email === 'devanshgautam0001@gmail.com' ? 'OWNER' : (dbUser?.role || 'ANALYST');
-
-    // Generate secure JWT containing uid, email and role
-    const JWT_SECRET = cleanEnvVal(process.env.JWT_SECRET) || 'fallback-secret-key-123';
-    const token = jwt.sign(
-      {
-        uid: dbUser.uid,
-        email: dbUser.email,
-        role: userRole,
-        id: dbUser.id,
-        status: dbUser.status || 'PENDING',
-        approved: dbUser.approved || false,
-        isActive: dbUser.isActive || false
-      },
-      JWT_SECRET,
-      { expiresIn: '24h' }
-    );
-
-    res.json({ user: { ...dbUser, role: userRole }, token });
   }));
 
   // 1.5. User Management (Admin only)
