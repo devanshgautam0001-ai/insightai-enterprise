@@ -3,7 +3,7 @@ import { User, Lock, Globe, ArrowRight, Sparkles, AlertCircle, Eye, EyeOff } fro
 import { useUIStore } from '../../store';
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
-import { signInWithPopup, signInWithEmailAndPassword, createUserWithEmailAndPassword, setPersistence, browserLocalPersistence, browserSessionPersistence } from 'firebase/auth';
+import { signInWithPopup, signInWithRedirect, getRedirectResult, signInWithEmailAndPassword, createUserWithEmailAndPassword, setPersistence, browserLocalPersistence, browserSessionPersistence } from 'firebase/auth';
 import { auth, googleAuthProvider, db as firestoreDb } from '../../lib/firebase.ts';
 import { doc, setDoc, collection, addDoc } from 'firebase/firestore';
 import { api } from '../../lib/api.ts';
@@ -19,6 +19,32 @@ export const Login: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [capsLockActive, setCapsLockActive] = useState(false);
   const [diagnosticReport, setDiagnosticReport] = useState<FirebaseDiagnosticReport | null>(null);
+
+  React.useEffect(() => {
+    const handleRedirectResult = async () => {
+      try {
+        const result = await getRedirectResult(auth);
+        if (result && result.user) {
+          console.log("[Firebase SDK Login Debug] Google Redirect Sign-In Succeeded! User:", result.user);
+          const user = result.user;
+          if (user.email) {
+            setUserEmail(user.email);
+            setLoading(true);
+            await syncSession(user);
+            setView('workspace');
+          }
+        }
+      } catch (err: any) {
+        console.error("Google redirect login result retrieval failed:", err);
+        if (err.code !== 'auth/web-storage-unsupported') {
+          setAuthError(err.message || "Failed to retrieve Google Sign-In redirect result.");
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+    handleRedirectResult();
+  }, []);
 
   // Synchronize Postgres & Firestore user metadata
   const syncSession = async (user: any) => {
@@ -117,11 +143,20 @@ export const Login: React.FC = () => {
         result = await signInWithPopup(auth, googleAuthProvider);
         console.log("[Firebase SDK Login Debug] Google Sign-In Succeeded! User:", result.user);
       } catch (fbErr: any) {
-        console.error("[Firebase SDK Login Debug] Google Sign-In THREW AN ERROR:", {
-          code: fbErr.code,
-          message: fbErr.message,
-          stack: fbErr.stack
-        });
+        console.error("[Firebase SDK Login Debug] Google Sign-In with popup failed:", fbErr.code, fbErr.message);
+        
+        // Detect if we should try redirecting because popups are blocked or we are in an iframe
+        const isIframe = window.self !== window.top;
+        if (fbErr.code === 'auth/popup-blocked' || fbErr.code === 'auth/cancelled-popup-request' || isIframe) {
+          console.log("[Firebase SDK Login Debug] Falling back to signInWithRedirect...");
+          try {
+            await signInWithRedirect(auth, googleAuthProvider);
+            return; // Exit as browser is redirecting
+          } catch (redirectErr: any) {
+            console.error("[Firebase SDK Login Debug] signInWithRedirect failed:", redirectErr);
+            throw fbErr; // throw original popup error if redirect also fails
+          }
+        }
         throw fbErr;
       }
       const user = result.user;
@@ -151,7 +186,7 @@ export const Login: React.FC = () => {
 
       let cleanMsg = "Google Sign-In failed. Please try again.";
       if (err.code === 'auth/popup-blocked') {
-        cleanMsg = "SSO popup window was blocked by your browser settings.";
+        cleanMsg = "SSO popup window was blocked by your browser settings. Try clicking the button again to trigger a direct redirect, or open the app in a new tab using the link below.";
       } else if (err.code === 'auth/network-request-failed') {
         cleanMsg = "A secure connection to the Google gateway could not be established.";
       } else {
@@ -499,6 +534,24 @@ export const Login: React.FC = () => {
               <span className="bg-brand-bg px-2 text-zinc-500 font-mono">Enforced Gateway Auth</span>
             </div>
           </div>
+
+          {window.self !== window.top && (
+            <div className="p-3 mb-4 bg-blue-500/10 border border-blue-500/20 text-blue-400 text-[11px] rounded-xl flex flex-col gap-1.5 leading-relaxed">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-blue-400" />
+                <span>
+                  You are viewing this console inside a browser sandbox frame. If Google SSO or Popups fail due to browser iframe cookie security policies, open the console in a full top-level tab.
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => window.open(window.location.href, '_blank')}
+                className="text-left font-bold text-blue-400 hover:underline transition-all self-start cursor-pointer flex items-center gap-1"
+              >
+                Open Console in New Tab ↗
+              </button>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 gap-3">
             <button

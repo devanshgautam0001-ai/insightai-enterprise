@@ -4,7 +4,7 @@ import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 import jwt from "jsonwebtoken";
-import { db } from "./src/db/index.ts";
+import { db, syncDatabaseSchema } from "./src/db/index.ts";
 import { schema } from "./src/db/index.ts";
 import { eq, and, desc } from "drizzle-orm";
 import { requireAuth, requireRole, AuthRequest } from "./src/middleware/auth.ts";
@@ -82,6 +82,13 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
+  // Run database schema synchronization and create tables asynchronously to avoid blocking server boot
+  syncDatabaseSchema().then(() => {
+    console.log("[PostgreSQL] Database schema synchronization completed successfully.");
+  }).catch((err: any) => {
+    console.error("[PostgreSQL] Failed to perform database schema synchronization at startup. Server will continue running.", err);
+  });
+
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
@@ -138,6 +145,11 @@ async function startServer() {
     }
     return ai;
   };
+
+  // Health check endpoint
+  app.get("/api/health", asyncHandler(async (_req, res) => {
+    res.json({ status: "ok" });
+  }));
 
   // 1. Auth synchronization
   app.post("/api/auth/bypass-login", asyncHandler(async (req, res) => {
@@ -210,7 +222,7 @@ async function startServer() {
   }));
 
   // 2. Workspaces list & create
-  app.get("/api/workspaces", requireAuth, requireRole(['SUPER_ADMIN', 'ADMIN', 'ANALYST']), asyncHandler(async (req: AuthRequest, res) => {
+  app.get("/api/workspaces", requireAuth, requireRole(['SUPER_ADMIN', 'ADMIN', 'ANALYST', 'VIEWER']), asyncHandler(async (req: AuthRequest, res) => {
     if (!req.user) throw new AppError("Authentication required", 401, "UNAUTHENTICATED");
     let [dbUser] = await db.select().from(schema.users).where(eq(schema.users.uid, req.user.uid));
     if (!dbUser) {
@@ -223,7 +235,18 @@ async function startServer() {
       );
     }
 
-    const workspaces = await db.select().from(schema.workspaces).where(eq(schema.workspaces.userId, dbUser.id));
+    let workspaces = await db.select().from(schema.workspaces).where(eq(schema.workspaces.userId, dbUser.id));
+    if (workspaces.length === 0) {
+      console.log(`[Workspace API] Automatically provisioning "Default Workspace" for ${dbUser.email}`);
+      const [newWS] = await db.insert(schema.workspaces).values({
+        name: "Default Workspace",
+        division: "Analytics Division",
+        userId: dbUser.id,
+        memberCount: 1,
+        status: "active"
+      }).returning();
+      workspaces = [newWS];
+    }
     res.json(workspaces);
   }));
 
@@ -322,6 +345,42 @@ async function startServer() {
     }).returning();
 
     res.json(newProj);
+  }));
+
+  app.put("/api/projects/:id", requireAuth, requireRole(['SUPER_ADMIN', 'ADMIN', 'ANALYST']), asyncHandler(async (req: AuthRequest, res) => {
+    const { id } = req.params;
+    const { name, description } = req.body;
+    const projectId = parseInt(id);
+    if (isNaN(projectId)) {
+      throw new AppError("Project ID must be a valid number", 400, "VALIDATION_ERROR");
+    }
+
+    const [updated] = await db.update(schema.projects)
+      .set({ name, description })
+      .where(eq(schema.projects.id, projectId))
+      .returning();
+
+    if (!updated) {
+      throw new AppError("Project not found", 404, "NOT_FOUND");
+    }
+    res.json(updated);
+  }));
+
+  app.delete("/api/projects/:id", requireAuth, requireRole(['SUPER_ADMIN', 'ADMIN']), asyncHandler(async (req: AuthRequest, res) => {
+    const { id } = req.params;
+    const projectId = parseInt(id);
+    if (isNaN(projectId)) {
+      throw new AppError("Project ID must be a valid number", 400, "VALIDATION_ERROR");
+    }
+
+    const [deleted] = await db.delete(schema.projects)
+      .where(eq(schema.projects.id, projectId))
+      .returning();
+
+    if (!deleted) {
+      throw new AppError("Project not found", 404, "NOT_FOUND");
+    }
+    res.json(deleted);
   }));
 
   // 4. Datasets list, create, update

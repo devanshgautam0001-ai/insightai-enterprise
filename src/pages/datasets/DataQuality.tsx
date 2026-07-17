@@ -15,9 +15,12 @@ export const DataQuality: React.FC = () => {
     );
   }
 
-  const totalQualityScore = Math.floor(
-    dataset.columns.reduce((acc, col) => acc + col.qualityScore, 0) / dataset.columns.length
-  );
+  const columns = dataset.columns || [];
+  const qualityMetrics = dataset.qualityMetrics || [];
+
+  const totalQualityScore = columns.length > 0
+    ? Math.floor(columns.reduce((acc, col) => acc + (col.qualityScore || 0), 0) / columns.length)
+    : 100;
 
   return (
     <div className="space-y-6 animate-fade-in" id="data-quality-page">
@@ -31,7 +34,7 @@ export const DataQuality: React.FC = () => {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-4">
-          {dataset.qualityMetrics.map((metric, idx) => (
+          {qualityMetrics.map((metric, idx) => (
             <QualityCard key={idx} metric={metric} />
           ))}
         </div>

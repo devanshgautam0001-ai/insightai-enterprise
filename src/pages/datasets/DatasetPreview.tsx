@@ -15,7 +15,8 @@ export const DatasetPreview: React.FC = () => {
     );
   }
 
-  const columnNames = dataset.columns.map((col) => col.name);
+  const columns = dataset.columns || [];
+  const columnNames = columns.map((col) => col.name);
 
   return (
     <div className="space-y-6 animate-fade-in" id="dataset-preview-page">
@@ -28,7 +29,7 @@ export const DatasetPreview: React.FC = () => {
       </div>
 
       <Card className="p-6 bg-white/[0.01] border border-white/5">
-        <DataPreviewTable rows={dataset.previewRows} columns={columnNames} />
+        <DataPreviewTable rows={dataset.previewRows || []} columns={columnNames} />
       </Card>
     </div>
   );

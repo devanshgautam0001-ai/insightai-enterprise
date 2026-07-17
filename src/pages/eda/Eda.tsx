@@ -67,7 +67,7 @@ export const Eda: React.FC = () => {
 
           {activeDataset ? (
             <div className="space-y-4">
-              {activeDataset.columns.map((col: DatasetColumn, idx: number) => (
+              {(activeDataset.columns || []).map((col: DatasetColumn, idx: number) => (
                 <div key={idx} className="p-3.5 rounded-xl bg-white/[0.02] border border-white/5 space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold text-zinc-200">{col.name}</span>

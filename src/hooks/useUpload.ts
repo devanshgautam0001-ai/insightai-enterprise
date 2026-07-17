@@ -58,6 +58,18 @@ export const useUpload = () => {
           memoryUsage: resultDataset.memoryUsage
         });
 
+        const parseIfString = (val: any) => {
+          if (typeof val === 'string') {
+            try {
+              return JSON.parse(val);
+            } catch (e) {
+              console.error("Failed to parse JSON string in useUpload:", val, e);
+              return val;
+            }
+          }
+          return val;
+        };
+
         finalDataset = {
           id: String(savedDataset.id),
           name: savedDataset.name,
@@ -67,9 +79,9 @@ export const useUpload = () => {
           cols: savedDataset.cols,
           fileType: savedDataset.fileType as any,
           uploadedAt: savedDataset.createdAt,
-          columns: savedDataset.columnsData as any,
-          qualityMetrics: savedDataset.qualityMetrics as any,
-          previewRows: savedDataset.previewRows as any,
+          columns: parseIfString(savedDataset.columnsData) as any,
+          qualityMetrics: parseIfString(savedDataset.qualityMetrics) as any,
+          previewRows: parseIfString(savedDataset.previewRows) as any,
           duplicateCount: savedDataset.duplicateCount,
           duplicatePercentage: savedDataset.duplicatePercentage,
           memoryUsage: savedDataset.memoryUsage

@@ -93,11 +93,11 @@ export const WorkspacePage: React.FC = () => {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {workspaces.map((ws) => {
+          {workspaces.map((ws, idx) => {
             const isSelected = activeWorkspace?.id === ws.id;
             return (
               <Card
-                key={ws.id}
+                key={`workspace-item-${ws.id ?? ''}-${idx}`}
                 onClick={() => handleSelect(ws)}
                 hoverEffect
                 className={`cursor-pointer transition-all border flex flex-col justify-between h-48 relative overflow-hidden group ${
@@ -136,6 +136,7 @@ export const WorkspacePage: React.FC = () => {
           {/* Custom Create Workspace card */}
           {!showCreate ? (
             <Card
+              key="workspace-register-trigger"
               onClick={() => setShowCreate(true)}
               hoverEffect
               className="cursor-pointer border border-dashed border-white/10 hover:border-white/30 bg-transparent flex flex-col items-center justify-center h-48 text-zinc-500 hover:text-white transition-all text-center"
@@ -144,7 +145,7 @@ export const WorkspacePage: React.FC = () => {
               <p className="font-display font-semibold text-sm">Register Tenant Workspace</p>
             </Card>
           ) : (
-            <Card className="border border-white/10 bg-brand-bg-sec flex flex-col justify-between h-48 p-5">
+            <Card key="workspace-creation-form" className="border border-white/10 bg-brand-bg-sec flex flex-col justify-between h-48 p-5">
               <form onSubmit={handleCreate} className="space-y-3 flex-grow flex flex-col justify-between">
                 <div className="space-y-2">
                   <input

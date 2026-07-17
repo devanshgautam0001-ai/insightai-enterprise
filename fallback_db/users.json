@@ -1,0 +1,38 @@
+[
+  {
+    "id": 12,
+    "uid": "TaAOJqad09PRR2Ht5swidIAn1DI2",
+    "email": "devanshgautam0001@gmail.com",
+    "role": "OWNER",
+    "display_name": "Devansh Gautam",
+    "photo_url": "https://lh3.googleusercontent.com/a/ACg8ocIu5fMku8eCeqWDL0TNcVOlTBs7Y_Rz8KhBGLUCQsTWgC-mN_KS=s96-c",
+    "provider": "google.com",
+    "last_login": "2026-07-17T09:42:17.312Z",
+    "created_at": "2026-07-17T09:42:17.314Z",
+    "updated_at": "2026-07-17T09:42:17.315Z"
+  },
+  {
+    "id": 19,
+    "uid": null,
+    "email": "devanshgautam0001@gmail.com",
+    "role": "OWNER",
+    "display_name": null,
+    "photo_url": null,
+    "provider": null,
+    "last_login": "2026-07-17T09:50:15.938Z",
+    "created_at": "2026-07-17T09:50:15.940Z",
+    "updated_at": "2026-07-17T09:50:15.940Z"
+  },
+  {
+    "id": 20,
+    "uid": "dev-uid-123",
+    "email": "devanshgautam0001@gmail.com",
+    "role": "OWNER",
+    "display_name": "Devansh Gautam",
+    "photo_url": "https://photo.url",
+    "provider": "google",
+    "last_login": "2026-07-17T09:53:32.996Z",
+    "created_at": "2026-07-17T09:53:32.999Z",
+    "updated_at": "2026-07-17T09:53:32.999Z"
+  }
+]

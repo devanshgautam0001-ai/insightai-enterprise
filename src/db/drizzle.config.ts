@@ -14,36 +14,32 @@ const cleanEnvVal = (val: string | undefined): string | undefined => {
   return s;
 };
 
-const sqlHost = cleanEnvVal(process.env.SQL_HOST);
-const sqlDbName = cleanEnvVal(process.env.SQL_DB_NAME);
-const user = cleanEnvVal(process.env.SQL_ADMIN_USER);
-const password = cleanEnvVal(process.env.SQL_ADMIN_PASSWORD);
+const databaseUrl = cleanEnvVal(process.env.DATABASE_URL) || cleanEnvVal(process.env.POSTGRES_URL);
 
-if (!sqlHost) {
-  throw new Error("SQL_HOST must be set in environment variables.");
+let dbCredentials: any = {};
+if (databaseUrl) {
+  const isProd = process.env.NODE_ENV === "production";
+  const hasSslQuery = databaseUrl.includes("sslmode=require") || databaseUrl.includes("ssl=true");
+  dbCredentials = {
+    url: databaseUrl,
+    ssl: (hasSslQuery || isProd) ? { rejectUnauthorized: false } : false,
+  };
+} else {
+  dbCredentials = {
+    host: cleanEnvVal(process.env.SQL_HOST) || "localhost",
+    user: cleanEnvVal(process.env.SQL_ADMIN_USER) || cleanEnvVal(process.env.SQL_USER) || "postgres",
+    password: cleanEnvVal(process.env.SQL_ADMIN_PASSWORD) || cleanEnvVal(process.env.SQL_PASSWORD) || "",
+    database: cleanEnvVal(process.env.SQL_DB_NAME) || cleanEnvVal(process.env.SQL_DB) || "postgres",
+    port: parseInt(cleanEnvVal(process.env.SQL_PORT) || "5432", 10),
+    ssl: false,
+  };
 }
-if (!sqlDbName) {
-  throw new Error("SQL_DB_NAME must be set in environment variables.");
-}
-if (!user) {
-  throw new Error("SQL_ADMIN_USER must be set in environment variables.");
-}
-if (!password) {
-  throw new Error("SQL_ADMIN_PASSWORD must be set in environment variables.");
-}
-console.log(`Using user: ${user} to connect to database.`);
 
 export default defineConfig({
   schema: "./src/db/schema.ts",
   out: "./drizzle", // Output directory for migrations.
   dialect: "postgresql",
   schemaFilter: ["public"],
-  dbCredentials: {
-    host: sqlHost,
-    user: user,
-    password: password,
-    database: sqlDbName,
-    ssl: false,
-  },
+  dbCredentials,
   verbose: true,
 });

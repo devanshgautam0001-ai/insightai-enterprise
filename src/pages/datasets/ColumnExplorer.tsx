@@ -23,6 +23,8 @@ export const ColumnExplorer: React.FC = () => {
     );
   }
 
+  const columns = dataset.columns || [];
+
   return (
     <div className="space-y-6 animate-fade-in" id="column-explorer-page">
       <div className="space-y-1">
@@ -35,7 +37,7 @@ export const ColumnExplorer: React.FC = () => {
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         <div className="xl:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4 h-fit">
-          {dataset.columns.map((col) => (
+          {columns.map((col) => (
             <ColumnCard
               key={col.name}
               column={col}

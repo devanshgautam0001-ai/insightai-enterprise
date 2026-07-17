@@ -21,6 +21,18 @@ export const useDataset = () => {
         if (safeList.length > 0) {
           // Retrieve the latest uploaded dataset for the active project
           const latest = safeList[safeList.length - 1];
+          const parseIfString = (val: any) => {
+            if (typeof val === 'string') {
+              try {
+                return JSON.parse(val);
+              } catch (e) {
+                console.error("Failed to parse JSON string in useDataset:", val, e);
+                return val;
+              }
+            }
+            return val;
+          };
+
           const coerced: DataEngineDataset = {
             id: latest.id,
             name: latest.name,
@@ -30,9 +42,9 @@ export const useDataset = () => {
             cols: latest.cols,
             fileType: latest.fileType as any,
             uploadedAt: latest.createdAt,
-            columns: latest.columnsData as any,
-            qualityMetrics: latest.qualityMetrics as any,
-            previewRows: latest.previewRows as any,
+            columns: parseIfString(latest.columnsData) as any,
+            qualityMetrics: parseIfString(latest.qualityMetrics) as any,
+            previewRows: parseIfString(latest.previewRows) as any,
             duplicateCount: latest.duplicateCount,
             duplicatePercentage: latest.duplicatePercentage,
             memoryUsage: latest.memoryUsage

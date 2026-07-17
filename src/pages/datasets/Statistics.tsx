@@ -16,7 +16,9 @@ export const Statistics: React.FC = () => {
     );
   }
 
-  const filteredColumns = dataset.columns.filter((col) =>
+  const columns = dataset.columns || [];
+
+  const filteredColumns = columns.filter((col) =>
     col.name.toLowerCase().includes(search.toLowerCase())
   );
 

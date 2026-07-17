@@ -18,13 +18,14 @@ export const MissingValueViewer: React.FC = () => {
     );
   }
 
-  const columnsWithNulls = dataset.columns.filter((col) => col.stats.nullCount > 0);
+  const columnsList = dataset.columns || [];
+  const columnsWithNulls = columnsList.filter((col) => col.stats && col.stats.nullCount > 0);
 
   const handleImpute = () => {
     setImputing(true);
     setTimeout(() => {
-      const cleanedColumns = dataset.columns.map((col) => {
-        if (col.stats.nullCount > 0) {
+      const cleanedColumns = columnsList.map((col) => {
+        if (col.stats && col.stats.nullCount > 0) {
           return {
             ...col,
             qualityScore: 98,
@@ -41,7 +42,7 @@ export const MissingValueViewer: React.FC = () => {
       setDataset({
         ...dataset,
         columns: cleanedColumns,
-        qualityMetrics: dataset.qualityMetrics.map((qm) => {
+        qualityMetrics: (dataset.qualityMetrics || []).map((qm) => {
           if (qm.ruleName.includes('Null')) {
             return {
               ...qm,

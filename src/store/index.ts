@@ -97,18 +97,6 @@ interface UIState {
   setReportStatus: (status: 'Not Started' | 'In Progress' | 'Completed') => void;
 }
 
-const mockWorkspaces: Workspace[] = [
-  { id: '1', name: 'Quantitative Analytics Squad', division: 'Risk Control Unit', memberCount: 12, status: 'active' },
-  { id: '2', name: 'Risk Control Unit', division: 'Treasury & Ledger', memberCount: 8, status: 'active' },
-  { id: '3', name: 'Executive Strategy Lab', division: 'C-Suite Strategy', memberCount: 5, status: 'active' }
-];
-
-const mockNotifications: SystemNotification[] = [
-  { id: '1', title: 'Model optimization completed', description: 'XGBoost reached 94.2% accuracy.', type: 'success', timestamp: '10m ago', read: false },
-  { id: '2', title: 'Pipeline warning', description: '142 null values detected in session_duration.', type: 'warning', timestamp: '1h ago', read: false },
-  { id: '3', title: 'Report compiled', description: 'Q3 Executive Summary PDF ready.', type: 'info', timestamp: '2h ago', read: false }
-];
-
 export const useUIStore = create<UIState>((set) => ({
   currentView: 'landing',
   isSidebarCollapsed: false,
@@ -142,8 +130,8 @@ export const useUIStore = create<UIState>((set) => ({
   isAiLoading: false,
   activeDataset: null,
   trainedModel: null,
-  notifications: mockNotifications,
-  workspaces: mockWorkspaces,
+  notifications: [],
+  workspaces: [],
 
   // Project state manager defaults
   activeProject: null,
