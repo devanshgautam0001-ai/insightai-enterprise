@@ -1,4 +1,36 @@
-# InsightAI: Enterprise Intelligent Data Studio & RAG Copilot
+<div align="center">
+
+# 🚀 InsightAI Enterprise
+### Enterprise AI Analytics & Machine Learning Platform
+
+<p align="center">
+An enterprise-grade AI-powered analytics platform built with React, Express, PostgreSQL, Firebase Authentication, and modern cloud architecture.
+</p>
+
+<p align="center">
+
+![License](https://img.shields.io/badge/License-MIT-blue.svg)
+![React](https://img.shields.io/badge/React-19-61DAFB?logo=react)
+![TypeScript](https://img.shields.io/badge/TypeScript-5-blue?logo=typescript)
+![Express](https://img.shields.io/badge/Express.js-Backend-black?logo=express)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Database-336791?logo=postgresql)
+![Firebase](https://img.shields.io/badge/Firebase-Authentication-FFCA28?logo=firebase)
+![Railway](https://img.shields.io/badge/Hosted%20on-Railway-0B0D0E?logo=railway)
+![Status](https://img.shields.io/badge/Production-Ready-success)
+
+</p>
+
+---
+
+## 🌍 Live Demo
+
+**Production URL**
+
+> https://insightai-enterprise-production.up.railway.app
+
+---
+
+ # InsightAI: Enterprise Intelligent Data Studio & RAG Copilot
 
 InsightAI is a production-grade, enterprise-ready SaaS suite designed for advanced data engineering, machine learning workflows, and interactive visual intelligence. It integrates an **ETL pipeline engine**, **ML Studio**, **Visual Dashboard Builder**, and a **context-grounded Intelligent RAG Copilot** powered by the Gemini 3.5 Flash model. 
 
