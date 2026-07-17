@@ -19,7 +19,15 @@ const cleanEnvVal = (val: string | undefined): string | undefined => {
 const JWT_SECRET = cleanEnvVal(process.env.JWT_SECRET) || 'fallback-secret-key-123';
 
 export interface AuthRequest extends Request {
-  user?: DecodedIdToken & { role?: string };
+  user?: DecodedIdToken & {
+    id?: number;
+    uid: string;
+    email: string;
+    role: string;
+    status: string;
+    approved: boolean;
+    isActive: boolean;
+  };
 }
 
 export const requireAuth = async (
@@ -55,44 +63,64 @@ export const requireAuth = async (
     try {
       const decodedToken = await adminAuth.verifyIdToken(token);
       
-      let role = 'ANALYST'; // Default role
+      let role = 'NONE';
+      let status = 'PENDING';
+      let approved = false;
+      let isActive = false;
+      let dbUser: any;
+
       if (decodedToken.email === 'devanshgautam0001@gmail.com') {
         role = 'OWNER';
-      } else {
-        // Attempt database lookup but fail gracefully if PostgreSQL is offline/unavailable
-        try {
-          let [dbUser] = await db.select().from(users).where(eq(users.uid, decodedToken.uid));
-          if (!dbUser && decodedToken.email) {
-            dbUser = await getOrCreateUser(
-              decodedToken.uid,
-              decodedToken.email,
-              decodedToken.name || null,
-              decodedToken.picture || null,
-              (decodedToken.firebase as any)?.sign_in_provider || null
-            );
-          }
-          if (dbUser) {
-            role = dbUser.role || 'ANALYST';
-          }
-        } catch (dbErr) {
-          console.warn('[Auth Middleware] PostgreSQL query failed (offline/refused). Falling back to safe default role:', dbErr);
-          // Safe fallback role based on email context or tenant suffix if database connection failed
-          if (decodedToken.email && (decodedToken.email.endsWith('.corp') || decodedToken.email.endsWith('.io'))) {
-            role = 'ADMIN';
-          } else {
-            role = 'ANALYST';
-          }
-        }
+        status = 'APPROVED';
+        approved = true;
+        isActive = true;
       }
 
-      if (role === 'SUPER_ADMIN') {
-        role = 'OWNER';
+      // Attempt database lookup but fail gracefully if PostgreSQL is offline/unavailable
+      try {
+        const results = await db.select().from(users).where(eq(users.uid, decodedToken.uid));
+        dbUser = results[0];
+        if (!dbUser && decodedToken.email) {
+          dbUser = await getOrCreateUser(
+            decodedToken.uid,
+            decodedToken.email,
+            decodedToken.name || null,
+            decodedToken.picture || null,
+            (decodedToken.firebase as any)?.sign_in_provider || null
+          );
+        }
+        if (dbUser) {
+          // If the logged in email is owner, override database fields to protect owner
+          if (dbUser.email === 'devanshgautam0001@gmail.com') {
+            role = 'OWNER';
+            status = 'APPROVED';
+            approved = true;
+            isActive = true;
+          } else {
+            role = dbUser.role || 'NONE';
+            status = dbUser.status || 'PENDING';
+            approved = dbUser.approved !== undefined ? dbUser.approved : false;
+            isActive = dbUser.isActive !== undefined ? dbUser.isActive : false;
+          }
+        }
+      } catch (dbErr) {
+        console.warn('[Auth Middleware] Database access failed, using token details:', dbErr);
+        if (decodedToken.email === 'devanshgautam0001@gmail.com') {
+          role = 'OWNER';
+          status = 'APPROVED';
+          approved = true;
+          isActive = true;
+        }
       }
 
       req.user = {
         ...decodedToken,
-        role
-      };
+        id: dbUser?.id,
+        role,
+        status,
+        approved,
+        isActive,
+      } as any;
       return next();
     } catch (firebaseError: any) {
       console.error('[Auth Middleware] Firebase ID Token verification failed:', firebaseError.message || firebaseError);
@@ -102,12 +130,58 @@ export const requireAuth = async (
     // 3. Process as our custom application JWT
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as any;
-      const userRole = decoded.email === 'devanshgautam0001@gmail.com' ? 'OWNER' : (decoded.role === 'SUPER_ADMIN' ? 'OWNER' : decoded.role);
+      const email = decoded.email;
+      let dbUser: any;
+      
+      let role = 'NONE';
+      let status = 'PENDING';
+      let approved = false;
+      let isActive = false;
+
+      if (email === 'devanshgautam0001@gmail.com') {
+        role = 'OWNER';
+        status = 'APPROVED';
+        approved = true;
+        isActive = true;
+      }
+
+      try {
+        const results = await db.select().from(users).where(eq(users.uid, decoded.uid));
+        dbUser = results[0];
+        if (dbUser) {
+          if (dbUser.email === 'devanshgautam0001@gmail.com') {
+            role = 'OWNER';
+            status = 'APPROVED';
+            approved = true;
+            isActive = true;
+          } else {
+            role = dbUser.role || 'NONE';
+            status = dbUser.status || 'PENDING';
+            approved = dbUser.approved !== undefined ? dbUser.approved : false;
+            isActive = dbUser.isActive !== undefined ? dbUser.isActive : false;
+          }
+        }
+      } catch (dbErr) {
+        console.warn('[Auth Middleware] Custom JWT database lookup failed:', dbErr);
+        if (email === 'devanshgautam0001@gmail.com') {
+          role = 'OWNER';
+          status = 'APPROVED';
+          approved = true;
+          isActive = true;
+        } else {
+          role = decoded.role || 'NONE';
+        }
+      }
+
       req.user = {
         uid: decoded.uid,
-        email: decoded.email,
-        role: userRole,
+        email,
+        role,
+        status,
+        approved,
+        isActive,
         sub: decoded.uid,
+        id: dbUser?.id || decoded.id,
       } as any;
       return next();
     } catch (jwtError: any) {
@@ -117,16 +191,45 @@ export const requireAuth = async (
   }
 };
 
+export const requireApproved = (req: AuthRequest, res: Response, next: NextFunction) => {
+  if (!req.user) {
+    return res.status(401).json({ error: 'Unauthorized: Not authenticated' });
+  }
+
+  if (req.user.email === 'devanshgautam0001@gmail.com') {
+    return next();
+  }
+
+  if (req.user.status !== 'APPROVED' || !req.user.approved || !req.user.isActive) {
+    return res.status(403).json({
+      error: 'Forbidden: Your account is awaiting administrator approval or has been suspended.',
+      status: req.user.status,
+      approved: req.user.approved,
+      isActive: req.user.isActive
+    });
+  }
+
+  next();
+};
+
 export const requireRole = (allowedRoles: string[]) => {
   return (req: AuthRequest, res: Response, next: NextFunction) => {
     if (!req.user || !req.user.role) {
       return res.status(401).json({ error: 'Unauthorized: Missing user role' });
     }
     // OWNER role has full access and overrides all role checks
-    if (req.user.role === 'OWNER' || req.user.role === 'SUPER_ADMIN') {
+    if (req.user.role === 'OWNER') {
       return next();
     }
-    if (!allowedRoles.includes(req.user.role)) {
+    
+    // Support legacy client calls/roles mapping if necessary
+    const rolesToCheck = allowedRoles.map(r => {
+      if (r === 'SUPER_ADMIN') return 'OWNER';
+      if (r === 'ANALYST' || r === 'VIEWER') return 'USER'; // Map any legacy roles to NONE/USER or allowed role
+      return r;
+    });
+
+    if (!allowedRoles.includes(req.user.role) && !rolesToCheck.includes(req.user.role)) {
       return res.status(403).json({ error: `Forbidden: Access restricted to roles: [${allowedRoles.join(', ')}]` });
     }
     next();

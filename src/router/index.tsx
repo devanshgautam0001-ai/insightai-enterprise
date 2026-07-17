@@ -28,9 +28,10 @@ import { FeatureEngineering } from '../pages/etl/FeatureEngineering';
 import { AccessDenied } from '../pages/auth/AccessDenied';
 import { UserManagement } from '../pages/auth/UserManagement';
 import { AnalyticsConfig } from '../pages/auth/AnalyticsConfig';
+import { PendingApprovalScreen } from '../pages/auth/PendingApproval';
 
 export const AppRouter: React.FC = () => {
-  const { currentView, isLoggedIn, userRole } = useUIStore();
+  const { currentView, isLoggedIn, userRole, userStatus, userApproved, userActive } = useUIStore();
 
   const isViewAllowed = (view: string) => {
     if (userRole === 'OWNER' || userRole === 'SUPER_ADMIN') {
@@ -69,6 +70,13 @@ export const AppRouter: React.FC = () => {
   };
 
   const renderView = () => {
+    // Intercept and force pending approval screen for non-approved users
+    if (isLoggedIn) {
+      if (userStatus !== 'APPROVED' || !userApproved || !userActive) {
+        return <PendingApprovalScreen />;
+      }
+    }
+
     // If the view is restricted and user is not an ADMIN, display AccessDenied page inside AppLayout
     if (!isViewAllowed(currentView)) {
       return (

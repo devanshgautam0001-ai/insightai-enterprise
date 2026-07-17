@@ -20,6 +20,9 @@ interface UIState {
   isLoggedIn: boolean;
   userEmail: string;
   userRole: string;
+  userApproved: boolean;
+  userStatus: string;
+  userActive: boolean;
   apiKeyMasked: string;
   showApiKey: boolean;
   outlierThreshold: number;
@@ -64,6 +67,9 @@ interface UIState {
   setCopilotOpen: (open: boolean) => void;
   setLoggedIn: (loggedIn: boolean) => void;
   setUserEmail: (email: string) => void;
+  setUserApproved: (approved: boolean) => void;
+  setUserStatus: (status: string) => void;
+  setUserActive: (active: boolean) => void;
   setOutlierThreshold: (threshold: number) => void;
   setLearningRate: (rate: number) => void;
   setTargetColumn: (column: string) => void;
@@ -109,6 +115,9 @@ export const useUIStore = create<UIState>((set) => ({
   isLoggedIn: false,
   userEmail: 'devanshgautam0001@gmail.com',
   userRole: 'USER',
+  userApproved: false,
+  userStatus: 'PENDING',
+  userActive: false,
   apiKeyMasked: '••••••••••••••••••••••••••••••••',
   showApiKey: false,
   outlierThreshold: 2.5,
@@ -159,6 +168,9 @@ export const useUIStore = create<UIState>((set) => ({
   setCopilotOpen: (isCopilotOpen) => set({ isCopilotOpen }),
   setLoggedIn: (isLoggedIn) => set({ isLoggedIn }),
   setUserEmail: (userEmail) => set({ userEmail }),
+  setUserApproved: (userApproved) => set({ userApproved }),
+  setUserStatus: (userStatus) => set({ userStatus }),
+  setUserActive: (userActive) => set({ userActive }),
   setOutlierThreshold: (outlierThreshold) => set({ outlierThreshold }),
   setLearningRate: (learningRate) => set({ learningRate }),
   setTargetColumn: (targetColumn) => set({ targetColumn }),

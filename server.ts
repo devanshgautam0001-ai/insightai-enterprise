@@ -7,7 +7,7 @@ import jwt from "jsonwebtoken";
 import { db, syncDatabaseSchema } from "./src/db/index.ts";
 import { schema } from "./src/db/index.ts";
 import { eq, and, desc } from "drizzle-orm";
-import { requireAuth, requireRole, AuthRequest } from "./src/middleware/auth.ts";
+import { requireAuth, requireRole, requireApproved, AuthRequest } from "./src/middleware/auth.ts";
 import { getOrCreateUser } from "./src/db/users.ts";
 
 dotenv.config();
@@ -213,7 +213,15 @@ async function startServer() {
     // Generate secure JWT containing uid, email and role
     const JWT_SECRET = cleanEnvVal(process.env.JWT_SECRET) || 'fallback-secret-key-123';
     const token = jwt.sign(
-      { uid: dbUser.uid, email: dbUser.email, role: userRole, id: dbUser.id },
+      {
+        uid: dbUser.uid,
+        email: dbUser.email,
+        role: userRole,
+        id: dbUser.id,
+        status: dbUser.status || 'PENDING',
+        approved: dbUser.approved || false,
+        isActive: dbUser.isActive || false
+      },
       JWT_SECRET,
       { expiresIn: '24h' }
     );
@@ -221,8 +229,133 @@ async function startServer() {
     res.json({ user: { ...dbUser, role: userRole }, token });
   }));
 
+  // 1.5. User Management (Admin only)
+  app.get("/api/users", requireAuth, requireApproved, requireRole(['OWNER', 'ADMIN']), asyncHandler(async (_req: AuthRequest, res) => {
+    const list = await db.select().from(schema.users).orderBy(desc(schema.users.createdAt));
+    res.json(list);
+  }));
+
+  app.put("/api/users/:uid/approve", requireAuth, requireApproved, requireRole(['OWNER', 'ADMIN']), asyncHandler(async (req: AuthRequest, res) => {
+    const { uid } = req.params;
+    const [targetUser] = await db.select().from(schema.users).where(eq(schema.users.uid, uid));
+    if (!targetUser) {
+      throw new AppError("User not found", 404, "NOT_FOUND");
+    }
+    if (targetUser.email === 'devanshgautam0001@gmail.com') {
+      throw new AppError("Cannot modify the owner account", 400, "VALIDATION_ERROR");
+    }
+    const updated = await db.update(schema.users)
+      .set({
+        status: 'APPROVED',
+        approved: true,
+        isActive: true,
+        updatedAt: new Date()
+      })
+      .where(eq(schema.users.uid, uid))
+      .returning();
+    res.json(updated[0]);
+  }));
+
+  app.put("/api/users/:uid/reject", requireAuth, requireApproved, requireRole(['OWNER', 'ADMIN']), asyncHandler(async (req: AuthRequest, res) => {
+    const { uid } = req.params;
+    const [targetUser] = await db.select().from(schema.users).where(eq(schema.users.uid, uid));
+    if (!targetUser) {
+      throw new AppError("User not found", 404, "NOT_FOUND");
+    }
+    if (targetUser.email === 'devanshgautam0001@gmail.com') {
+      throw new AppError("Cannot modify the owner account", 400, "VALIDATION_ERROR");
+    }
+    const updated = await db.update(schema.users)
+      .set({
+        status: 'REJECTED',
+        approved: false,
+        isActive: false,
+        updatedAt: new Date()
+      })
+      .where(eq(schema.users.uid, uid))
+      .returning();
+    res.json(updated[0]);
+  }));
+
+  app.put("/api/users/:uid/suspend", requireAuth, requireApproved, requireRole(['OWNER', 'ADMIN']), asyncHandler(async (req: AuthRequest, res) => {
+    const { uid } = req.params;
+    const [targetUser] = await db.select().from(schema.users).where(eq(schema.users.uid, uid));
+    if (!targetUser) {
+      throw new AppError("User not found", 404, "NOT_FOUND");
+    }
+    if (targetUser.email === 'devanshgautam0001@gmail.com') {
+      throw new AppError("Cannot modify the owner account", 400, "VALIDATION_ERROR");
+    }
+    const updated = await db.update(schema.users)
+      .set({
+        status: 'SUSPENDED',
+        isActive: false,
+        updatedAt: new Date()
+      })
+      .where(eq(schema.users.uid, uid))
+      .returning();
+    res.json(updated[0]);
+  }));
+
+  app.put("/api/users/:uid/activate", requireAuth, requireApproved, requireRole(['OWNER', 'ADMIN']), asyncHandler(async (req: AuthRequest, res) => {
+    const { uid } = req.params;
+    const [targetUser] = await db.select().from(schema.users).where(eq(schema.users.uid, uid));
+    if (!targetUser) {
+      throw new AppError("User not found", 404, "NOT_FOUND");
+    }
+    if (targetUser.email === 'devanshgautam0001@gmail.com') {
+      throw new AppError("Cannot modify the owner account", 400, "VALIDATION_ERROR");
+    }
+    const updated = await db.update(schema.users)
+      .set({
+        status: 'APPROVED',
+        isActive: true,
+        approved: true,
+        updatedAt: new Date()
+      })
+      .where(eq(schema.users.uid, uid))
+      .returning();
+    res.json(updated[0]);
+  }));
+
+  app.put("/api/users/:uid/role", requireAuth, requireApproved, requireRole(['OWNER', 'ADMIN']), asyncHandler(async (req: AuthRequest, res) => {
+    const { uid } = req.params;
+    const { role } = req.body;
+    if (!['OWNER', 'ADMIN', 'USER', 'NONE'].includes(role)) {
+      throw new AppError("Invalid role", 400, "VALIDATION_ERROR");
+    }
+    const [targetUser] = await db.select().from(schema.users).where(eq(schema.users.uid, uid));
+    if (!targetUser) {
+      throw new AppError("User not found", 404, "NOT_FOUND");
+    }
+    if (targetUser.email === 'devanshgautam0001@gmail.com') {
+      throw new AppError("Cannot modify the owner account", 400, "VALIDATION_ERROR");
+    }
+    const updated = await db.update(schema.users)
+      .set({
+        role,
+        updatedAt: new Date()
+      })
+      .where(eq(schema.users.uid, uid))
+      .returning();
+    res.json(updated[0]);
+  }));
+
+  app.delete("/api/users/:uid", requireAuth, requireApproved, requireRole(['OWNER', 'ADMIN']), asyncHandler(async (req: AuthRequest, res) => {
+    const { uid } = req.params;
+    const [targetUser] = await db.select().from(schema.users).where(eq(schema.users.uid, uid));
+    if (!targetUser) {
+      throw new AppError("User not found", 404, "NOT_FOUND");
+    }
+    if (targetUser.email === 'devanshgautam0001@gmail.com') {
+      throw new AppError("Cannot modify the owner account", 400, "VALIDATION_ERROR");
+    }
+    await db.delete(schema.users).where(eq(schema.users.uid, uid));
+    res.json({ success: true, message: "User deleted successfully" });
+  }));
+
   // 2. Workspaces list & create
-  app.get("/api/workspaces", requireAuth, requireRole(['SUPER_ADMIN', 'ADMIN', 'ANALYST', 'VIEWER']), asyncHandler(async (req: AuthRequest, res) => {
+  app.get("/api/workspaces", requireAuth, requireApproved, requireRole(['OWNER', 'ADMIN']), asyncHandler(async (req: AuthRequest, res) => {
     if (!req.user) throw new AppError("Authentication required", 401, "UNAUTHENTICATED");
     let [dbUser] = await db.select().from(schema.users).where(eq(schema.users.uid, req.user.uid));
     if (!dbUser) {
@@ -250,7 +383,7 @@ async function startServer() {
     res.json(workspaces);
   }));
 
-  app.post("/api/workspaces", requireAuth, requireRole(['SUPER_ADMIN', 'ADMIN', 'ANALYST']), asyncHandler(async (req: AuthRequest, res) => {
+  app.post("/api/workspaces", requireAuth, requireApproved, requireRole(['OWNER', 'ADMIN']), asyncHandler(async (req: AuthRequest, res) => {
     if (!req.user) throw new AppError("Authentication required", 401, "UNAUTHENTICATED");
     let [dbUser] = await db.select().from(schema.users).where(eq(schema.users.uid, req.user.uid));
     if (!dbUser) {
@@ -278,7 +411,7 @@ async function startServer() {
   }));
 
   // 3. Projects list & create
-  app.get("/api/projects", requireAuth, requireRole(['SUPER_ADMIN', 'ADMIN', 'ANALYST', 'VIEWER']), asyncHandler(async (req: AuthRequest, res) => {
+  app.get("/api/projects", requireAuth, requireApproved, requireRole(['OWNER', 'ADMIN']), asyncHandler(async (req: AuthRequest, res) => {
     const { workspaceId } = req.query;
     if (!workspaceId || workspaceId === "undefined") {
       throw new AppError("Workspace ID is required", 400, "VALIDATION_ERROR");
@@ -310,7 +443,7 @@ async function startServer() {
     res.json(projectsList || []);
   }));
 
-  app.post("/api/projects", requireAuth, requireRole(['SUPER_ADMIN', 'ADMIN', 'ANALYST']), asyncHandler(async (req: AuthRequest, res) => {
+  app.post("/api/projects", requireAuth, requireApproved, requireRole(['OWNER', 'ADMIN']), asyncHandler(async (req: AuthRequest, res) => {
     const { workspaceId, name, description } = req.body;
     if (!workspaceId || !name || !description) {
       throw new AppError("workspaceId, name, and description are required", 400, "VALIDATION_ERROR");
@@ -347,7 +480,7 @@ async function startServer() {
     res.json(newProj);
   }));
 
-  app.put("/api/projects/:id", requireAuth, requireRole(['SUPER_ADMIN', 'ADMIN', 'ANALYST']), asyncHandler(async (req: AuthRequest, res) => {
+  app.put("/api/projects/:id", requireAuth, requireApproved, requireRole(['OWNER', 'ADMIN']), asyncHandler(async (req: AuthRequest, res) => {
     const { id } = req.params;
     const { name, description } = req.body;
     const projectId = parseInt(id);
@@ -366,7 +499,7 @@ async function startServer() {
     res.json(updated);
   }));
 
-  app.delete("/api/projects/:id", requireAuth, requireRole(['SUPER_ADMIN', 'ADMIN']), asyncHandler(async (req: AuthRequest, res) => {
+  app.delete("/api/projects/:id", requireAuth, requireApproved, requireRole(['OWNER', 'ADMIN']), asyncHandler(async (req: AuthRequest, res) => {
     const { id } = req.params;
     const projectId = parseInt(id);
     if (isNaN(projectId)) {
@@ -384,7 +517,7 @@ async function startServer() {
   }));
 
   // 4. Datasets list, create, update
-  app.get("/api/datasets", requireAuth, requireRole(['SUPER_ADMIN', 'ADMIN', 'ANALYST', 'VIEWER']), asyncHandler(async (req: AuthRequest, res) => {
+  app.get("/api/datasets", requireAuth, requireApproved, requireRole(['OWNER', 'ADMIN']), asyncHandler(async (req: AuthRequest, res) => {
     const { projectId } = req.query;
     if (!projectId) throw new AppError("Project ID is required", 400, "VALIDATION_ERROR");
 
@@ -394,7 +527,7 @@ async function startServer() {
     res.json(datasets);
   }));
 
-  app.post("/api/datasets", requireAuth, requireRole(['SUPER_ADMIN', 'ADMIN', 'ANALYST']), asyncHandler(async (req: AuthRequest, res) => {
+  app.post("/api/datasets", requireAuth, requireApproved, requireRole(['OWNER', 'ADMIN']), asyncHandler(async (req: AuthRequest, res) => {
     const {
       projectId, name, size, bytes, rows, cols, fileType,
       columnsData, qualityMetrics, previewRows, duplicateCount,
@@ -428,7 +561,7 @@ async function startServer() {
     res.json(newDataset);
   }));
 
-  app.put("/api/datasets/:id", requireAuth, requireRole(['SUPER_ADMIN', 'ADMIN', 'ANALYST']), asyncHandler(async (req: AuthRequest, res) => {
+  app.put("/api/datasets/:id", requireAuth, requireApproved, requireRole(['OWNER', 'ADMIN']), asyncHandler(async (req: AuthRequest, res) => {
     const { id } = req.params;
     const datasetId = parseInt(id);
     if (isNaN(datasetId)) {
@@ -447,7 +580,7 @@ async function startServer() {
   }));
 
   // 5. Trained models list & create
-  app.get("/api/models", requireAuth, requireRole(['SUPER_ADMIN', 'ADMIN', 'ANALYST', 'VIEWER']), asyncHandler(async (req: AuthRequest, res) => {
+  app.get("/api/models", requireAuth, requireApproved, requireRole(['OWNER', 'ADMIN']), asyncHandler(async (req: AuthRequest, res) => {
     const { projectId } = req.query;
     if (!projectId) throw new AppError("Project ID is required", 400, "VALIDATION_ERROR");
 
@@ -457,7 +590,7 @@ async function startServer() {
     res.json(models);
   }));
 
-  app.post("/api/models", requireAuth, requireRole(['SUPER_ADMIN', 'ADMIN', 'ANALYST']), asyncHandler(async (req: AuthRequest, res) => {
+  app.post("/api/models", requireAuth, requireApproved, requireRole(['OWNER', 'ADMIN']), asyncHandler(async (req: AuthRequest, res) => {
     const {
       projectId, name, algorithm, accuracy, targetColumn,
       testSplit, learningRate, metrics, logs
@@ -486,7 +619,7 @@ async function startServer() {
   }));
 
   // 5.5. Predictions
-  app.get("/api/predictions", requireAuth, requireRole(['SUPER_ADMIN', 'ADMIN', 'ANALYST', 'VIEWER']), asyncHandler(async (req: AuthRequest, res) => {
+  app.get("/api/predictions", requireAuth, requireApproved, requireRole(['OWNER', 'ADMIN']), asyncHandler(async (req: AuthRequest, res) => {
     const { projectId } = req.query;
     if (!projectId) throw new AppError("Project ID is required", 400, "VALIDATION_ERROR");
 
@@ -499,7 +632,7 @@ async function startServer() {
     res.json(results);
   }));
 
-  app.post("/api/predictions", requireAuth, requireRole(['SUPER_ADMIN', 'ADMIN', 'ANALYST']), asyncHandler(async (req: AuthRequest, res) => {
+  app.post("/api/predictions", requireAuth, requireApproved, requireRole(['OWNER', 'ADMIN']), asyncHandler(async (req: AuthRequest, res) => {
     const { projectId, modelId, inputData, prediction, confidence, probabilities } = req.body;
     if (!projectId || !modelId || !inputData || prediction === undefined) {
       throw new AppError("projectId, modelId, inputData, and prediction are required", 400, "VALIDATION_ERROR");
@@ -525,7 +658,7 @@ async function startServer() {
   }));
 
   // 6. Dashboards
-  app.get("/api/dashboards", requireAuth, requireRole(['SUPER_ADMIN', 'ADMIN', 'ANALYST', 'VIEWER']), asyncHandler(async (req: AuthRequest, res) => {
+  app.get("/api/dashboards", requireAuth, requireApproved, requireRole(['OWNER', 'ADMIN']), asyncHandler(async (req: AuthRequest, res) => {
     const { projectId } = req.query;
     if (!projectId) throw new AppError("Project ID is required", 400, "VALIDATION_ERROR");
 
@@ -535,7 +668,7 @@ async function startServer() {
     res.json(dashboards);
   }));
 
-  app.post("/api/dashboards", requireAuth, requireRole(['SUPER_ADMIN', 'ADMIN', 'ANALYST']), asyncHandler(async (req: AuthRequest, res) => {
+  app.post("/api/dashboards", requireAuth, requireApproved, requireRole(['OWNER', 'ADMIN']), asyncHandler(async (req: AuthRequest, res) => {
     const { projectId, name, widgets } = req.body;
     if (!projectId || !name || !widgets) {
       throw new AppError("projectId, name, and widgets are required", 400, "VALIDATION_ERROR");
@@ -560,7 +693,7 @@ async function startServer() {
   }));
 
   // 7. Reports
-  app.get("/api/reports", requireAuth, requireRole(['SUPER_ADMIN', 'ADMIN', 'ANALYST', 'VIEWER']), asyncHandler(async (req: AuthRequest, res) => {
+  app.get("/api/reports", requireAuth, requireApproved, requireRole(['OWNER', 'ADMIN']), asyncHandler(async (req: AuthRequest, res) => {
     const { projectId } = req.query;
     if (!projectId) throw new AppError("Project ID is required", 400, "VALIDATION_ERROR");
 
@@ -570,7 +703,7 @@ async function startServer() {
     res.json(reports);
   }));
 
-  app.post("/api/reports", requireAuth, requireRole(['SUPER_ADMIN', 'ADMIN', 'ANALYST']), asyncHandler(async (req: AuthRequest, res) => {
+  app.post("/api/reports", requireAuth, requireApproved, requireRole(['OWNER', 'ADMIN']), asyncHandler(async (req: AuthRequest, res) => {
     const { projectId, name } = req.body;
     if (!projectId) throw new AppError("Project ID is required", 400, "VALIDATION_ERROR");
 
@@ -643,7 +776,7 @@ ${trainedModel ? `## 3. Optimization Metrics\nThe predictive framework optimized
   }));
 
   // 8. Chat history endpoints
-  app.get("/api/chat-messages", requireAuth, requireRole(['SUPER_ADMIN', 'ADMIN', 'ANALYST', 'VIEWER']), asyncHandler(async (req: AuthRequest, res) => {
+  app.get("/api/chat-messages", requireAuth, requireApproved, requireRole(['OWNER', 'ADMIN']), asyncHandler(async (req: AuthRequest, res) => {
     const { projectId } = req.query;
     if (!projectId) throw new AppError("Project ID is required", 400, "VALIDATION_ERROR");
 
@@ -653,7 +786,7 @@ ${trainedModel ? `## 3. Optimization Metrics\nThe predictive framework optimized
     res.json(messages);
   }));
 
-  app.post("/api/chat-messages", requireAuth, requireRole(['SUPER_ADMIN', 'ADMIN', 'ANALYST']), asyncHandler(async (req: AuthRequest, res) => {
+  app.post("/api/chat-messages", requireAuth, requireApproved, requireRole(['OWNER', 'ADMIN']), asyncHandler(async (req: AuthRequest, res) => {
     const { projectId, role, content } = req.body;
     if (!projectId || !role || !content) {
       throw new AppError("projectId, role, and content are required", 400, "VALIDATION_ERROR");
@@ -671,7 +804,7 @@ ${trainedModel ? `## 3. Optimization Metrics\nThe predictive framework optimized
   }));
 
   // AI Dashboard Stats Endpoint (Dynamic & Persistent)
-  app.post("/api/dashboard/stats", asyncHandler(async (req, res) => {
+  app.post("/api/dashboard/stats", requireAuth, requireApproved, requireRole(['OWNER', 'ADMIN']), asyncHandler(async (req: AuthRequest, res) => {
     const { activeDataset, trainedModel, pipelineRunning, activities, projectId } = req.body;
 
     // Secure database lookup if projectId is provided, fulfilling "Every page must read from PostgreSQL"
@@ -924,7 +1057,7 @@ ${trainedModel ? `## 3. Optimization Metrics\nThe predictive framework optimized
   }));
 
   // AI Copilot Grounded Endpoint (Integrated with postgres history and real-time models)
-  app.post("/api/copilot", requireAuth, requireRole(['SUPER_ADMIN', 'ADMIN', 'ANALYST']), asyncHandler(async (req: AuthRequest, res) => {
+  app.post("/api/copilot", requireAuth, requireApproved, requireRole(['OWNER', 'ADMIN']), asyncHandler(async (req: AuthRequest, res) => {
     const { messages, prompt, datasetName, currentMetrics, projectId } = req.body;
 
     let dbMessages = messages;

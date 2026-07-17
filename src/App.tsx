@@ -16,18 +16,17 @@ const queryClient = new QueryClient({
   },
 });
 
-function getRoleFromToken(token: string | null): string {
-  if (!token) return 'USER';
+function decodeTokenPayload(token: string | null) {
+  if (!token) return null;
   try {
     const parts = token.split('.');
     if (parts.length === 3) {
-      const payload = JSON.parse(atob(parts[1]));
-      return payload.role || 'USER';
+      return JSON.parse(atob(parts[1]));
     }
   } catch (e) {
-    console.error("Failed to decode token for role:", e);
+    console.error("Failed to decode token:", e);
   }
-  return 'USER';
+  return null;
 }
 
 export default function App() {
@@ -39,12 +38,19 @@ export default function App() {
     const mockEmail = localStorage.getItem('insightai_mock_email');
     const token = localStorage.getItem('insightai_jwt');
     if (mockEmail && token) {
-      const decodedRole = getRoleFromToken(token);
-      const role = mockEmail === 'devanshgautam0001@gmail.com' ? 'OWNER' : decodedRole;
+      const payload = decodeTokenPayload(token);
+      const role = mockEmail === 'devanshgautam0001@gmail.com' ? 'OWNER' : (payload?.role || 'NONE');
+      const status = mockEmail === 'devanshgautam0001@gmail.com' ? 'APPROVED' : (payload?.status || 'PENDING');
+      const approved = mockEmail === 'devanshgautam0001@gmail.com' ? true : (payload?.approved || false);
+      const isActive = mockEmail === 'devanshgautam0001@gmail.com' ? true : (payload?.isActive || false);
+
       useUIStore.setState({
         isLoggedIn: true,
         userEmail: mockEmail,
         userRole: role,
+        userStatus: status,
+        userApproved: approved,
+        userActive: isActive,
       });
       setLoading(false);
       return;
@@ -59,21 +65,36 @@ export default function App() {
           if (data && data.token) {
             localStorage.setItem('insightai_jwt', data.token);
           }
-          let assignedRole = data?.user?.role || 'ANALYST';
+          const payload = decodeTokenPayload(data?.token || null);
+          let assignedRole = payload?.role || 'NONE';
+          let status = payload?.status || 'PENDING';
+          let approved = payload?.approved || false;
+          let isActive = payload?.isActive || false;
+
           if (user.email === 'devanshgautam0001@gmail.com') {
             assignedRole = 'OWNER';
+            status = 'APPROVED';
+            approved = true;
+            isActive = true;
           }
 
           useUIStore.setState({
             isLoggedIn: true,
             userEmail: user.email,
             userRole: assignedRole,
+            userStatus: status,
+            userApproved: approved,
+            userActive: isActive,
           });
 
           // Prevent redirect if already deep inside another dashboard screen
           const curView = useUIStore.getState().currentView;
           if (['landing', 'login', 'register', 'forgot-password'].includes(curView)) {
-            setView(assignedRole === 'USER' ? 'dashboard' : 'workspace');
+            if (status !== 'APPROVED' || !approved || !isActive) {
+              setView('pending-approval');
+            } else {
+              setView(assignedRole === 'USER' ? 'dashboard' : 'workspace');
+            }
           }
         } catch (e) {
           console.error("Session recovery backend sync failed:", e);

@@ -122,5 +122,32 @@ export const api = {
     }
 
     return json;
+  },
+
+  async delete<T = any>(url: string): Promise<T> {
+    const headers = await getHeaders(url);
+    const response = await fetch(url, {
+      method: 'DELETE',
+      headers,
+    });
+
+    const json = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      if (json && json.success === false && json.error) {
+        throw new Error(json.error.message || `HTTP error! status: ${response.status}`);
+      }
+      const errMessage = json?.error || `HTTP error! status: ${response.status}`;
+      throw new Error(errMessage);
+    }
+
+    if (json && typeof json === 'object' && 'success' in json) {
+      if (json.success === false) {
+        throw new Error(json.error?.message || "An unexpected error occurred");
+      }
+      return json.data;
+    }
+
+    return json;
   }
 };

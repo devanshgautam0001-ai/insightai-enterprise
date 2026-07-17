@@ -5,7 +5,10 @@ export const users = pgTable('users', {
   id: serial('id').primaryKey(),
   uid: text('uid').notNull().unique(), // Firebase Auth UID
   email: text('email').notNull(),
-  role: text('role').default('ANALYST').notNull(), // 'SUPER_ADMIN' | 'ADMIN' | 'ANALYST' | 'VIEWER'
+  role: text('role').default('NONE').notNull(), // 'OWNER' | 'ADMIN' | 'USER' | 'NONE'
+  status: text('status').default('PENDING').notNull(), // 'PENDING' | 'APPROVED' | 'REJECTED' | 'SUSPENDED'
+  approved: boolean('approved').default(false).notNull(),
+  isActive: boolean('is_active').default(false).notNull(),
   displayName: text('display_name'),
   photoUrl: text('photo_url'),
   provider: text('provider'),

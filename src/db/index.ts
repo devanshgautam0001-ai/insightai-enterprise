@@ -259,7 +259,10 @@ export const syncDatabaseSchema = async () => {
         id SERIAL PRIMARY KEY,
         uid TEXT NOT NULL UNIQUE,
         email TEXT NOT NULL,
-        role TEXT DEFAULT 'ANALYST' NOT NULL,
+        role TEXT DEFAULT 'NONE' NOT NULL,
+        status TEXT DEFAULT 'PENDING' NOT NULL,
+        approved BOOLEAN DEFAULT FALSE NOT NULL,
+        is_active BOOLEAN DEFAULT FALSE NOT NULL,
         display_name TEXT,
         photo_url TEXT,
         provider TEXT,
@@ -267,6 +270,14 @@ export const syncDatabaseSchema = async () => {
         created_at TIMESTAMP DEFAULT NOW(),
         updated_at TIMESTAMP DEFAULT NOW()
       );
+    `);
+
+    // Add new columns if table exists but lacks them
+    await client.query(`
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'NONE' NOT NULL;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'PENDING' NOT NULL;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS approved BOOLEAN DEFAULT FALSE NOT NULL;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT FALSE NOT NULL;
     `);
 
     // Workspaces table

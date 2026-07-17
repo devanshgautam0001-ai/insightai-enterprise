@@ -11,18 +11,21 @@ export async function getOrCreateUser(
 ) {
   const [existingUser] = await db.select().from(users).where(eq(users.uid, uid));
   
-  let role = 'ANALYST';
+  let role = 'NONE';
+  let status = 'PENDING';
+  let approved = false;
+  let isActive = false;
+
   if (email === 'devanshgautam0001@gmail.com') {
     role = 'OWNER';
+    status = 'APPROVED';
+    approved = true;
+    isActive = true;
   } else if (existingUser) {
     role = existingUser.role;
-    if (role === 'SUPER_ADMIN') {
-      role = 'ADMIN'; // Map old SUPER_ADMIN role to ADMIN
-    } else if (role === 'USER') {
-      role = 'ANALYST'; // Map old USER role to ANALYST
-    }
-  } else {
-    role = 'ANALYST';
+    status = existingUser.status || 'PENDING';
+    approved = existingUser.approved !== undefined ? existingUser.approved : false;
+    isActive = existingUser.isActive !== undefined ? existingUser.isActive : false;
   }
 
   const result = await db.insert(users)
@@ -30,6 +33,9 @@ export async function getOrCreateUser(
       uid,
       email,
       role,
+      status,
+      approved,
+      isActive,
       displayName: displayName || null,
       photoUrl: photoUrl || null,
       provider: provider || null,
@@ -41,6 +47,9 @@ export async function getOrCreateUser(
       set: {
         email,
         role,
+        status,
+        approved,
+        isActive,
         displayName: displayName || null,
         photoUrl: photoUrl || null,
         provider: provider || null,
