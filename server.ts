@@ -82,7 +82,8 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  app.use(express.json());
+  app.use(express.json({ limit: "50mb" }));
+  app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
   // Middleware to automatically wrap all successful API JSON responses
   app.use("/api", (_req, res, next) => {
