@@ -1,4 +1,4 @@
-<div align="center">
+<img width="1890" height="948" alt="Screenshot 2026-07-17 181335" src="https://github.com/user-attachments/assets/ed05c6e6-8195-427f-9a4d-e865a7185681" /><div align="center">
 
 # 🚀 InsightAI Enterprise
 ### Enterprise AI Analytics & Machine Learning Platform
@@ -252,3 +252,22 @@ Validates live cluster integrity (Express application state, database connection
     }
   }
   ```
+<img width="1917" height="911" alt="Screenshot 2026-07-17 180542" src="https://github.com/user-attachments/assets/1d9a623e-c81b-48d3-892e-5db12833dfc3" />
+<img width="1918" height="897" alt="Screenshot 2026-07-17 180552" src="https://github.com/user-attachments/assets/e6723253-415c-4721-8e97-810ae6af70f2" />
+<img width="1917" height="895" alt="Screenshot 2026-07-17 180601" src="https://github.com/user-attachments/assets/1eb4f713-412b-41b4-9aa2-1d98cde3db57" />
+<img width="1918" height="890" alt="Screenshot 2026-07-17 180609" src="https://github.com/user-attachments/assets/9229cbc3-0882-4142-96e5-9b3e3718a8aa" />
+<img width="1917" height="893" alt="Screenshot 2026-07-17 180625" src="https://github.com/user-attachments/assets/d213140d-fe1f-4bb6-b0f5-2086f23c68ec" />
+🚀 Want to try InsightAI Enterprise?
+
+The platform is protected with role-based access control (RBAC). For security reasons, new accounts don't receive access automatically. Every user must be approved by the administrator before they can use enterprise features.
+
+If you'd like to explore the platform, feel free to send me a DM. I'll review your request and grant the appropriate access so you can test the application.
+
+🔐 Secure access • Admin approval required • Enterprise role management
+DM ME AT:devanshgautam0001@gmail.com
+
+
+
+
+
+
