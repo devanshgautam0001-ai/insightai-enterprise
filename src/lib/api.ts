@@ -1,12 +1,17 @@
 import { auth } from './firebase.ts';
 
-async function getHeaders(url?: string): Promise<HeadersInit> {
+async function getHeaders(url?: string, body?: any): Promise<HeadersInit> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
 
   // For the sync endpoint, always use the fresh Firebase ID token to verify and get/refresh the JWT
   const isSyncUrl = url && (url.endsWith('/auth/sync') || url.endsWith('/auth/login'));
+
+  if (isSyncUrl && body && typeof body === 'object' && body.idToken) {
+    headers['Authorization'] = `Bearer ${body.idToken}`;
+    return headers;
+  }
 
   if (!isSyncUrl) {
     try {
@@ -69,7 +74,7 @@ export const api = {
   },
 
   async post<T = any>(url: string, body: any): Promise<T> {
-    const headers = await getHeaders(url);
+    const headers = await getHeaders(url, body);
     const response = await fetch(url, {
       method: 'POST',
       headers,
@@ -97,7 +102,7 @@ export const api = {
   },
 
   async put<T = any>(url: string, body: any): Promise<T> {
-    const headers = await getHeaders(url);
+    const headers = await getHeaders(url, body);
     const response = await fetch(url, {
       method: 'PUT',
       headers,
