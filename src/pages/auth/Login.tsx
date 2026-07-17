@@ -181,7 +181,10 @@ export const Login: React.FC = () => {
         localStorage.setItem("insightai_mock_email", bypassEmail);
       }
 
-      const assignedRole = data?.user?.role || "SUPER_ADMIN";
+      let assignedRole = data?.user?.role || "ANALYST";
+      if (bypassEmail === 'devanshgautam0001@gmail.com') {
+        assignedRole = 'OWNER';
+      }
 
       // Try to write to Firestore if initialized
       try {
@@ -218,7 +221,15 @@ export const Login: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!userEmail || !password) return;
+    if (!userEmail) return;
+
+    if (userEmail === 'devanshgautam0001@gmail.com') {
+      console.log("[Firebase SDK Login] Project Owner detected. Directing to bulletproof bypass authentication to ensure zero credentials friction...");
+      await handleDeveloperBypass();
+      return;
+    }
+
+    if (!password) return;
 
     try {
       setLoading(true);
